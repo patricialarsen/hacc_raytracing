@@ -158,12 +158,12 @@ def write_checkpoint_dir(step_idx, sim, kappa_map, shear1_map, shear2_map,
     phi_full = gather_map_to_rank0_64bit(phi, pix_min, pix_max, npix, comm)
 
     if rank==0:
-        hp.write_map(tmp + '/kappa.fits', kappa_map, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/shear1.fits', shear1_map, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/shear2.fits', shear2_map, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/w_map.fits', w_map, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/theta.fits', theta, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/phi.fits', phi, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/kappa.fits', kappa_full, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/shear1.fits', shear1_full, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/shear2.fits', shear2_full, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/w_map.fits', w_full, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/theta.fits', theta_full, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/phi.fits', phi_full, dtype=np.float64, overwrite=True)
 
     if add_psi:
         psi_full = gather_map_to_rank0_64bit(psi, pix_min, pix_max, npix, comm)
@@ -224,9 +224,8 @@ def write_outputs(step_idx, sim, pix_min, pix_max, comm, kappa_map=None, shear1_
             suffix = str(step_high)+'_'+str(step_low)+'.fits'
             
     if kappa_born is not None:
-        kappa_born_full = gather_map_to_rank0(kappa_born_cmb, pix_min, pix_max, npix, comm )
         if rank==0:
-            hp.write_map(path_out + 'kappa_born_' + suffix, kappa_born_full, dtype=np.float32, overwrite=True)
+            hp.write_map(path_out + 'kappa_born_' + suffix, kappa_born, dtype=np.float32, overwrite=True)
             
     if not born_only:
         kappa_full = gather_map_to_rank0(kappa_map, pix_min, pix_max, npix, comm)
@@ -234,17 +233,19 @@ def write_outputs(step_idx, sim, pix_min, pix_max, comm, kappa_map=None, shear1_
         shear2_full = gather_map_to_rank0(shear2_map, pix_min, pix_max, npix, comm)
         w_full = gather_map_to_rank0(w_map, pix_min, pix_max, npix, comm)
         if rank == 0:
-            hp.write_map(path_out + 'kappa_' + suffix, kappa_map, dtype=np.float32, overwrite=True)
-            hp.write_map(path_out + 'shear1_' + suffix, shear1_map, dtype=np.float32, overwrite=True)
-            hp.write_map(path_out + 'shear2_' + suffix, shear2_map, dtype=np.float32, overwrite=True)
-            hp.write_map(path_out + 'w_map_' + suffix, w_map, dtype=np.float32, overwrite=True)
+            hp.write_map(path_out + 'kappa_' + suffix, kappa_full, dtype=np.float32, overwrite=True)
+            hp.write_map(path_out + 'shear1_' + suffix, shear1_full, dtype=np.float32, overwrite=True)
+            hp.write_map(path_out + 'shear2_' + suffix, shear2_full, dtype=np.float32, overwrite=True)
+            hp.write_map(path_out + 'w_map_' + suffix, w_full, dtype=np.float32, overwrite=True)
 
     return 
 
 
-def write_native_state( step_idx, sim, A_11, A_12, A_21, A_22, theta, phi, psi, comm):
+def write_native_state( step_idx, sim, A_11, A_12, A_21, A_22, theta, phi, psi, pix_min, pix_max, comm):
     
     rank = comm.Get_rank()
+    npix = hp.nside2npix(sim["nside"])
+
     path_out = sim['output_path_rt']
     if step_idx>sim['nplanes']-1:
         suffix = "tail_plane_" + str(step_idx - sim['nplanes']) + '_source_basis.fits'

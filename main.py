@@ -21,7 +21,8 @@ from iterate_arrays import iterate_arrays
 from utils import initialize_ray_state, maps_from_jacobian, timed, initialize_ray_state_restart
 from utils import rotate_state_to_observer_basis, advance_ray_and_matrix_state, advance_chi_values
 
-from simulation import LJ_simulation as sim 
+from hacc_sims import LJ_simulation, FrontierE_simulation, FrontierE_simulation_hydro
+sim = LJ_simulation()
 
 
 # additional born output at z=1, or separate born script?

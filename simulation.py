@@ -5,6 +5,7 @@ import sys
 import numpy as np
 import healpy as hp
 import numpy as np
+import h5py
 from astropy.cosmology import FlatLambdaCDM, z_at_value
 from astropy import units as u
 import pyccl as ccl
@@ -14,6 +15,7 @@ import math
 from hacc_sims import LJ_simulation as sim
 from hacc_sims import step2z
 from seam_correction import correct_density_sheet_y0
+from utils import map2alm_ducc_lsmr
 
 
 # constants 
@@ -148,7 +150,11 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
         alms_lens, chi_av, kappa_fac, n_per_steradian = get_input_alm_chi_z(step_idx, sim)
     else:
         map_read,  chi_av, kappa_fac, n_per_steradian = get_input_map_chi_z(step_idx, sim)
-        alms_lens = hp.map2alm((map_read/n_per_steradian - 1),lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights, ) 
+        if sim['nside']<=8192:
+            alms_lens = hp.map2alm((map_read/n_per_steradian - 1),lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights, ) 
+        else:
+            alms_lens = map2alm_ducc_lsmr((map_read/n_per_steradian - 1), sim['nside'], lmax, nthreads)
+        
 
     cl_lens = hp.alm2cl(alms_lens)
     if save_cls:

@@ -23,7 +23,7 @@ from utils import rotate_state_to_observer_basis, advance_ray_and_matrix_state, 
 
 from utils_mpi import initialize_ray_state_restart, initialize_ray_state_chunked
 
-from simulation import LJ_simulation as sim 
+from hacc_sims import LJ_simulation, FrontierE_simulation, FrontierE_simulation_hydro
 
 try:
     from mpi4py import MPI
@@ -36,6 +36,8 @@ except ImportError as exc:
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
+
+sim = FrontierE_simulation()
 
 
 # additional born output at z=1, or separate born script?
@@ -80,16 +82,16 @@ theta0, phi0 = hp.pix2ang(nside, np.arange(pix_min, pix_max))
 
 # if restarting from previously stalled run, read in previous state 
 if restart:
-    state = initialize_ray_state_restart(sim)
+    state = initialize_ray_state_restart(sim, pix_min, pix_max, comm)
     
     # Need U/gtheta/gphi from the completed current step, for updating to step_idx.
     if rank==0:
         if state.step_idx>sim['nplanes']:
-            chi_av, alms_filtered = get_ccl_synthetic_alms_CCL(state.step_idx-1, sim['path_in'], sim, lmax, nthreads)
+            chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx-1, sim['path_in'], sim, lmax, nthreads)
         else:
             chi_av, alms_filtered = get_input_map_alms(state.step_idx-1, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False)
     else:
-        alms_filtered = np.empty(nalm, dtype=np.complex128)
+        alms_filtered = np.empty(n_lms, dtype=np.complex128)
         chi_av = np.empty((), dtype=np.float64)
 
     chi_av = np.array(chi_av, dtype=np.float64)
@@ -101,7 +103,7 @@ if restart:
     del alms_filtered
 
 else:
-    state = initialize_ray_state(nside, lmax)
+    state = initialize_ray_state_chunked(nside, pix_min, pix_max, lmax)
     theta0 = state.theta.copy()
     phi0 = state.phi.copy()
 
@@ -119,7 +121,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
             else:
                 chi_av, alms_filtered = get_input_map_alms(state.step_idx, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False)
         else:
-            alms_filtered = np.empty(nalm, dtype=np.complex128)
+            alms_filtered = np.empty(n_lms, dtype=np.complex128)
             chi_av = np.empty((), dtype=np.float64)
             
         chi_av = np.array(chi_av, dtype=np.float64)
@@ -149,14 +151,15 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
     if write_checkpoints:
         with timed(f"step {state.step_idx} checkpoint writes"):
             kappa_map, shear1_map, shear2_map, w_map = maps_from_jacobian(state.A_11, state.A_12, state.A_21, state.A_22)    
-            write_checkpoint_dir( state.step_idx, sim, kappa_map, shear1_map, shear2_map, w_map, state.theta, state.phi, state.psi, state.kappa_born_alm)
-            
+            write_checkpoint_dir( state.step_idx, sim, kappa_map, shear1_map, shear2_map, w_map, state.theta, state.phi,  
+                                  pix_min, pix_max, comm, state.psi, state.kappa_born_alm)
+    
     if write_all_unrotated_steps or (state.step_idx in write_unrotated_step):
         with timed(f"step {state.step_idx} write native ray state"):
             write_native_state(
                 state.step_idx, sim,
                 state.A_11, state.A_12, state.A_21, state.A_22,
-                state.theta, state.phi, state.psi,)
+                state.theta, state.phi, state.psi, pix_min, pix_max, comm)
 
     
     if write_all_rotated_steps or (state.step_idx in write_rotated_step):
@@ -167,7 +170,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
                 kappa_born = hp.alm2map(state.kappa_born_alm, nside=nside, lmax=lmax, mmax=lmax, pixwin=True)
             else:
                 kappa_born = None
-            write_outputs(state.step_idx, sim, kappa_map, shear1_map, shear2_map, w_map, kappa_born=kappa_born)
+            write_outputs(state.step_idx, sim, pix_min, pix_max, comm, kappa_map, shear1_map, shear2_map, w_map, kappa_born=kappa_born)
 
     print(f"[timer] step {state.step_idx} total: {time.perf_counter() - step_t0:.2f} s", flush=True)
 
@@ -184,6 +187,6 @@ if cmb_convert:
     else:
         kappa_born_cmb = None
 
-    write_outputs_mpi(state.step_idx, sim, kappa_map, shear1_map, shear2_map, w_map, CMB=True, kappa_born=kappa_born_cmb, comm=comm) # this one should use CMB=True
+    write_outputs(state.step_idx, sim, pix_min, pix_max, comm, kappa_map, shear1_map, shear2_map, w_map, CMB=True, kappa_born=kappa_born_cmb, comm=comm) # this one should use CMB=True
 
     

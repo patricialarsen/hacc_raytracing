@@ -120,10 +120,10 @@ matter_power_spectrum='halofit')
 
 
     # derived parameters
-    FrontierE_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
-    FrontierE_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['z_cmb']+1))*LJ_simulation['h']
-    FrontierE_simulation['sim_z_max'] = step2z(LJ_simulation['step_list_max'][-1]-1, LJ_simulation['zfin'], LJ_simulation['zinit'], LJ_simulation['nsteps'])
-    FrontierE_simulation['sim_chi_max'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['sim_z_max']+1))*LJ_simulation['h'] 
+    FrontierE_simulation['nplanes'] =  len(FrontierE_simulation['step_list_max'])
+    FrontierE_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(FrontierE_simulation['cosmo_ccl'],a=1./(FrontierE_simulation['z_cmb']+1))*FrontierE_simulation['h']
+    FrontierE_simulation['sim_z_max'] = step2z(FrontierE_simulation['step_list_max'][-1]-1, FrontierE_simulation['zfin'], FrontierE_simulation['zinit'], FrontierE_simulation['nsteps'])
+    FrontierE_simulation['sim_chi_max'] = ccl.background.comoving_radial_distance(FrontierE_simulation['cosmo_ccl'],a=1./(FrontierE_simulation['sim_z_max']+1))*FrontierE_simulation['h'] 
 
 
     # path to files 
@@ -145,12 +145,12 @@ matter_power_spectrum='halofit')
 
 def FrontierE_simulation_hydro():
 
-    FrontierE_simulation = FrontierE_simulation()
-    FrontierE_simulation['name'] = "Frontier-E (hydro)"
-    FrontierE_simulation['path_maps'] =  '/pscratch/sd/p/plarsen/mass_sheets_FrontierE_hydro/'
-    FrontierE_simulation['fb'] = 0.1582
+    FrontierE_simulation_hydro = FrontierE_simulation()
+    FrontierE_simulation_hydro['name'] = "Frontier-E (hydro)"
+    FrontierE_simulation_hydro['path_maps'] =  '/pscratch/sd/p/plarsen/mass_sheets_FrontierE_hydro/'
+    FrontierE_simulation_hydro['fb'] = 0.1582
 
-    return FrontierE_simulation
+    return FrontierE_simulation_hydro
     
 
 
