@@ -108,16 +108,35 @@ def get_input_map_chi_z(step_idx,  sim):
     chi_min, chi_max, chi_av = get_chi_step(step_idx, sim)
     z_av = z_at_value(sim['cosmo'].comoving_distance, chi_av/sim['h']*u.Mpc, method='bounded',zmin=0,zmax=10)
     
-    map_read = np.fromfile(sim['path_maps']+'density_'+str(sim['step_list_max'][step_idx])+'_'+str(sim['step_list_min'][step_idx])+'.bin','<f8')
     if sim['name']=="Last Journey":
+        map_read = np.fromfile(sim['path_maps']+'density_'+str(sim['step_list_max'][step_idx])+'_'+str(sim['step_list_min'][step_idx])+'.bin','<f8')
         dist_pix = sim['signed_dist_pix'] 
         map_read, eps = correct_density_sheet_y0(map_read, dist_pix, sim['A_array'][step_idx], sim['w_array'][step_idx], max_dist=20)
         
-    map_read = downgrade_nested_surface_density(map_read, sim['nside'])
+    if sim['name']=="Frontier-E":
+        map_read = h5py.File(sim['path_maps']+'GO_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
+        map_read = map_read['rho'][:]
+        
+    if sim['name']=="Frontier-E (hydro)": 
+        map_read = h5py.File(sim['path_maps']+'hydro_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
+        map_read = map_read['rho'][:]
 
-    map_read = hp.reorder(map_read,n2r=True)
-    n_per_steradian = np.mean(map_read)
-    kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av *sim['mpp'] * n_per_steradian
+
+    map_read = downgrade_nested_surface_density(map_read, sim['nside'])    # safe for nside >8192
+    map_read = hp.reorder(map_read,n2r=True)    # safe for nside >8192
+
+
+    if sim['name']=="Last Journey":
+        n_per_steradian = np.mean(map_read)
+        kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av *sim['mpp'] * n_per_steradian
+    else:
+        # otherwise maps are in units of Msun/h/steradian
+        if sim['name']== "Frontier-E (hydro)":
+            fb_fact = (1-sim['fb'])**2 + sim['fb']**2
+            neff = np.mean(map_read)/ fb_fact /sim['mpp'] #(1-f_b)^2 + fb^2
+        n_per_steradian = np.mean(map_read)/sim['mpp'] 
+        kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av * np.mean(map_read)
+        
     return map_read, chi_av, kappa_fac, n_per_steradian
     
 

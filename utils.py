@@ -68,6 +68,8 @@ def initialize_ray_state(nside, lmax):
         np.zeros(hp.Alm.getsize(lmax), dtype=np.complex128),
     )
 
+
+
 def maps_from_jacobian(A_11, A_12, A_21, A_22):
     kappa_map = 1.0 - (A_11 + A_22)/2.
     shear1_map = -(A_11-A_22)/2.
@@ -143,9 +145,7 @@ def advance_chi_values(state, chi_kp1):
 
 
 
-
-
-def initialize_ray_state_restart(sim, add_psi=True):
+def initialize_ray_state_restart(sim,  add_psi=True):
     (step_idx, theta, phi, A_11, A_22, A_12, A_21, psi, theta_m1, 
      phi_m1, A_11_m1, A_22_m1, A_12_m1, A_21_m1, psi_m1, kappa_born_alm, 
      chi_km1, chi_k,)= restart_from_checkpoint(sim, add_psi=add_psi)

@@ -81,6 +81,78 @@ matter_power_spectrum='halofit')
 
 
 
+def FrontierE_simulation():
+    FrontierE_simulation = {}
+    FrontierE_simulation['name'] = "Frontier-E"
+    FrontierE_simulation['mpp'] = 1342777220.0 # in Msun/h for dark matter-only run, but used as an approximation to get shot noise for hydro sim too  
+    FrontierE_simulation["Omega_m"] = 0.30964468
+    FrontierE_simulation['h'] = 0.6766
+    FrontierE_simulation['rho_m0'] = FrontierE_simulation["Omega_m"] * rho_crit0
+    FrontierE_simulation['nsteps']= 625
+    FrontierE_simulation['zinit']= 200.0
+    FrontierE_simulation['zfin'] = 0.0
+    FrontierE_simulation['z_cmb'] = 1089.0
+
+    FrontierE_simulation['step_list_max'] = [ 604, 584, 566, 548, 531, 515, 499, 484, 470, 456, 442,
+                                  429, 417, 405, 393, 381, 370, 359, 349, 339, 329, 319, 310, 
+                                  300, 291, 283, 274, 266, 257, 249, 242, 234, 226, 219, 212,
+                                  205, 198, 191, 184, 178, 171, 165, 159, 153, 147, 141, 136, 
+                                  130, 125,  119,  114,  109,  104, 101]
+
+    FrontierE_simulation['step_list_min'] = [624, 604, 584, 566, 548, 531, 515, 499, 484, 470, 456, 442,
+                                  429, 417, 405, 393, 381, 370, 359, 349, 339, 329, 319, 310, 
+                                  300, 291, 283, 274, 266, 257, 249, 242, 234, 226, 219, 212,
+                                  205, 198, 191, 184, 178, 171, 165, 159, 153, 147, 141, 136, 
+                                  130, 125,  119,  114,  109,  104]
+
+    # changeable parameters 
+    FrontierE_simulation['nside'] = 16384 # note that reducing nside will cause a downgrade in the map, and will likely induce aliasing. 
+    FrontierE_simulation['n_steps_cmb'] = 20 
+
+    
+    FrontierE_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE'
+    FrontierE_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_wiener/'
+
+
+    FrontierE_simulation['cosmo'] = FlatLambdaCDM(H0 = 67.66, Om0 = FrontierE_simulation["Omega_m"], Ob0 = 0.04897468161869667, Tcmb0 = 0, Neff = 0) 
+    FrontierE_simulation['cosmo_ccl'] = ccl.Cosmology(Omega_c=0.26067, Omega_b=0.04897468161869667, h=0.6766, n_s=0.9665, sigma8=0.8102,  transfer_function='boltzmann_camb',
+matter_power_spectrum='halofit')
+
+
+    # derived parameters
+    FrontierE_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
+    FrontierE_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['z_cmb']+1))*LJ_simulation['h']
+    FrontierE_simulation['sim_z_max'] = step2z(LJ_simulation['step_list_max'][-1]-1, LJ_simulation['zfin'], LJ_simulation['zinit'], LJ_simulation['nsteps'])
+    FrontierE_simulation['sim_chi_max'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['sim_z_max']+1))*LJ_simulation['h'] 
+
+
+    # path to files 
+    FrontierE_simulation['path_maps'] = '/pscratch/sd/p/plarsen/mass_sheets_FrontierE/'
+
+    # maps for Frontier-E are CIC-weighted density map in Msun/h/steradian on HEALPix map of nside 16384 in NESTED order
+    FrontierE_simulation['has_maps'] = True
+
+
+    # additional testing values 
+    FrontierE_simulation['nperst'] = None
+    FrontierE_simulation['nperst_steps'] = None
+
+    FrontierE_simulation['path_alms'] = None
+    FrontierE_simulation['has_alms'] = False
+    
+    return FrontierE_simulation
+    
+
+def FrontierE_simulation_hydro():
+
+    FrontierE_simulation = FrontierE_simulation()
+    FrontierE_simulation['name'] = "Frontier-E (hydro)"
+    FrontierE_simulation['path_maps'] =  '/pscratch/sd/p/plarsen/mass_sheets_FrontierE_hydro/'
+    FrontierE_simulation['fb'] = 0.1582
+
+    return FrontierE_simulation
+    
+
 
 def test_simulation():
     test_simulation = {}
