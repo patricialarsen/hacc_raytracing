@@ -117,7 +117,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
     with timed(f"step {state.step_idx} read/input map"):
         if rank==0:
             if state.step_idx>sim['nplanes']-1:
-                chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx, sim['path_in'], sim, lmax, nthreads)
+                chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx, sim, lmax, nthreads)
             else:
                 chi_av, alms_filtered = get_input_map_alms(state.step_idx, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False)
         else:
@@ -187,6 +187,6 @@ if cmb_convert:
     else:
         kappa_born_cmb = None
 
-    write_outputs(state.step_idx, sim, pix_min, pix_max, comm, kappa_map, shear1_map, shear2_map, w_map, CMB=True, kappa_born=kappa_born_cmb, comm=comm) # this one should use CMB=True
+    write_outputs(state.step_idx, sim, pix_min, pix_max, comm, kappa_map, shear1_map, shear2_map, w_map, CMB=True, kappa_born=kappa_born_cmb ) # this one should use CMB=True
 
     

@@ -63,7 +63,7 @@ if restart:
     
     # Need U/gtheta/gphi from the completed current step, for updating to step_idx.
     if state.step_idx>sim['nplanes']:
-        chi_av, alms_filtered = get_ccl_synthetic_alms_CCL(state.step_idx-1, sim['path_in'], sim, lmax, nthreads)
+        chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx-1,  sim, lmax, nthreads)
     else:
         chi_av, alms_filtered = get_input_map_alms(state.step_idx-1, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False)
         

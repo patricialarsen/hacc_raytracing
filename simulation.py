@@ -135,8 +135,9 @@ def get_input_map_chi_z(step_idx,  sim):
         # otherwise maps are in units of Msun/h/steradian
         if sim['name']== "Frontier-E (hydro)":
             fb_fact = (1-sim['fb'])**2 + sim['fb']**2
-            neff = np.mean(map_read)/ fb_fact /sim['mpp'] #(1-f_b)^2 + fb^2
-        n_per_steradian = np.mean(map_read)/sim['mpp'] 
+            n_per_steradian = np.mean(map_read)/ fb_fact /sim['mpp'] #(1-f_b)^2 + fb^2
+        else:
+            n_per_steradian = np.mean(map_read)/sim['mpp'] 
         kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av * np.mean(map_read)
         
     return map_read, chi_av, kappa_fac, n_per_steradian
@@ -166,11 +167,11 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
 
     
     if filter=='wiener':
-        alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut)
+        alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
     elif filter=='wiener_tapered':
-        alms_filtered = wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, sim['nside'], sn_taper=sn_taper, sn_end=sn_end, min_taper_width=min_taper_width, ell_cut=ell_cut, apply_pix_window=apply_pix_window)
+        alms_filtered = wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, sim['nside'], sn_taper=sn_taper, sn_end=sn_end, min_taper_width=min_taper_width, ell_cut=ell_cut, apply_pix_window=apply_pix_window, datapath=sim['pixwin_datapath'])
     elif filter=='window':
-        alms_filtered = window_filter(alms_lens,  lmax, sim['nside'], ell_cut=ell_cut)
+        alms_filtered = window_filter(alms_lens,  lmax, sim['nside'], ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
     else:
         alms_filtered = alms_lens
 

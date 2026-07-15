@@ -22,7 +22,7 @@ def smooth_cl_log_ell(cl, lmin=2, ngrid=4096, sigma_grid=25, floor=1e-300):
     return out
 
 
-def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True, ell_cut=None):
+def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True, ell_cut=None, datapath=None):
     """ Wiener filter to filter out shot noise """
     cl_lens = hp.alm2cl(alms_lens, lmax=lmax)
     shot_noise = 1.0/n_per_steradian
@@ -33,7 +33,7 @@ def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True
     filt = np.zeros_like(cl_lens)
     
     if apply_pix_window:
-        window = hp.pixwin(nside, lmax=lmax, datapath=None)
+        window = hp.pixwin(nside, lmax=lmax, datapath=datapath)
     else:
         window = np.ones_like(filt)
     
@@ -47,7 +47,7 @@ def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True
     alms_filtered = hp.almxfl(alms_lens,filt, mmax=lmax)
     return alms_filtered
 
-def wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, nside, sn_taper=10.0, sn_end=5.0, min_taper_width=0.0, ell_cut=None, apply_pix_window=True):
+def wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, nside, sn_taper=10.0, sn_end=5.0, min_taper_width=0.0, ell_cut=None, apply_pix_window=True, datapath=None):
     """ Wiener filter to filter out shot noise, with an additional signal to noise tapering, 
     cutting out scales where the noise strongly dominates the signal and the recovered Cl gets
     noisy """
@@ -61,7 +61,7 @@ def wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, nside, sn_taper=10
     filt = np.zeros_like(cl_lens)
     
     if apply_pix_window:
-        window = hp.pixwin(nside, lmax=lmax, datapath=None)
+        window = hp.pixwin(nside, lmax=lmax, datapath=datapath)
     else:
         window = np.ones_like(filt)
 
@@ -111,9 +111,9 @@ def wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, nside, sn_taper=10
 
     return alms_filtered
 
-def window_filter(alms_lens,  lmax, nside, ell_cut=None):
+def window_filter(alms_lens,  lmax, nside, ell_cut=None, datapath=None):
     """ filter accounting for the pixel window function only """
-    window = hp.pixwin(nside, lmax=lmax, datapath=None)
+    window = hp.pixwin(nside, lmax=lmax, datapath=datapath)
     good = window > 1e-8
 
     filt = np.ones_like(window)

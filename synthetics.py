@@ -23,7 +23,7 @@ G = 4.3011790220362e-09 # Mpc/h (Msun/h)^-1 (km/s)^2
 z_cmb = 1089.0
 
 
-def get_synthetic_alms_CCL(step_idx, path_in, sim, lmax, nthreads,  filter='window', z_source=None, seed0=12345, use_map=False, use_pixel_weights=True, sn_taper=10.0, sn_end=5.0, min_taper_width=500, ell_cut=None, apply_pix_window=True, add_noise=False, use_n_pers=False):
+def get_synthetic_alms_CCL(step_idx, sim, lmax, nthreads,  filter='window', z_source=None, seed0=12345, use_map=False, use_pixel_weights=True, sn_taper=10.0, sn_end=5.0, min_taper_width=500, ell_cut=None, apply_pix_window=True, add_noise=False, use_n_pers=False):
     """
     """
     chi_min, chi_max, chi_av = get_chi_step(step_idx, sim)
@@ -73,11 +73,11 @@ def get_synthetic_alms_CCL(step_idx, path_in, sim, lmax, nthreads,  filter='wind
         # go back to alm space and apply filter 
         alms_lens = hp.map2alm(map_syn, lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights)
         if filter=='wiener':
-            alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut)
+            alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
         elif filter=='wiener_tapered':
-            alms_filtered = wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, sim['nside'], sn_taper=sn_taper, sn_end=sn_end, min_taper_width=min_taper_width, ell_cut=ell_cut, apply_pix_window=apply_pix_window)
+            alms_filtered = wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, sim['nside'], sn_taper=sn_taper, sn_end=sn_end, min_taper_width=min_taper_width, ell_cut=ell_cut, apply_pix_window=apply_pix_window, datapath=sim['pixwin_datapath'])
         elif filter=='window':
-            alms_filtered = window_filter(alms_lens,  lmax, sim['nside'], ell_cut=ell_cut)
+            alms_filtered = window_filter(alms_lens,  lmax, sim['nside'], ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
         else:
             alms_filtered = alms_lens
 

@@ -28,6 +28,7 @@ def LJ_simulation():
     LJ_simulation['zinit']= 200.0
     LJ_simulation['zfin'] = 0.0
     LJ_simulation['z_cmb'] = 1089.0
+    LJ_simulation['pixwin_datapath']=None
 
     LJ_simulation['step_list_max'] = [484, 468, 453, 439, 426, 413, 400, 388, 376, 365, 355, 
                                   344, 334, 324, 315, 306, 297, 288, 280, 272, 264, 256,
@@ -108,6 +109,7 @@ def FrontierE_simulation():
     # changeable parameters 
     FrontierE_simulation['nside'] = 16384 # note that reducing nside will cause a downgrade in the map, and will likely induce aliasing. 
     FrontierE_simulation['n_steps_cmb'] = 20 
+    FrontierE_simulation['pixwin_datapath']='/pscratch/sd/p/plarsen/ray_tracing_tests/data/'
 
     
     FrontierE_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE'
@@ -166,6 +168,8 @@ def test_simulation():
     test_simulation['zinit']= 200.0
     test_simulation['zfin'] = 0.0
     test_simulation['z_source'] = 0.2 # we're going to assume a source plane at z=0.2
+    test_simulation['pixwin_datapath']=None
+
     
     test_simulation['step_list_max'] = [484, 468, 453, 439, 426]
     test_simulation['step_list_min'] = [500, 484, 468, 453, 439]
