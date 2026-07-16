@@ -7,8 +7,6 @@ from transport_xyz import update_matrix_transport_xyz_basis_numba, transport_A_r
 from contextlib import contextmanager
 from write_funcs import restart_from_checkpoint
 import time
-import ducc0.healpix
-import ducc0.sht as dsht
 
 
 @contextmanager
@@ -158,24 +156,3 @@ def initialize_ray_state_restart(sim,  add_psi=True):
         kappa_born_alm, chi_km1, chi_k, step_idx)
 
 
-def map2alm_ducc_lsmr(delta_map, nside, lmax, nthreads, eps=1e-6, maxiter=3,):
-
-    m = np.asarray(delta_map, dtype=np.float64).reshape(1, -1)
-    ginfo = ducc0.healpix.Healpix_Base(int(nside), "RING").sht_info()
-
-    kwargs = dict(
-        map=m,
-        lmax=int(lmax),
-        mmax=int(lmax),
-        spin=0,
-        maxiter=int(maxiter),
-        epsilon=float(eps),
-        nthreads=int(nthreads),
-        **ginfo,
-    )
-
-    res = dsht.pseudo_analysis(**kwargs)
-
-    alm = res[0][0]
-
-    return alm

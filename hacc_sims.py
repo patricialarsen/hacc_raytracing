@@ -48,7 +48,8 @@ def LJ_simulation():
     LJ_simulation['nside'] = 8192 # note that reducing nside will cause a downgrade in the map, and will likely induce aliasing. 
     LJ_simulation['n_steps_cmb'] = 10 
     LJ_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/'
-    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_alloutputs/'
+    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_mpitest/'
+#    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_alloutputs/'
 
 
     LJ_simulation['cosmo'] = FlatLambdaCDM(H0 = 67.66, Om0 = 0.30964, Ob0 = 0.04897468161869667, Tcmb0 = 0, Neff = 0) 
@@ -57,7 +58,13 @@ matter_power_spectrum='halofit')
 
 
     # derived parameters
-    LJ_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
+    #LJ_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
+
+    LJ_simulation['nplanes'] =  3#len(FrontierE_simulation['step_list_max'])
+    LJ_simulation['n_steps_cmb'] = 0 
+
+
+    
     LJ_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['z_cmb']+1))*LJ_simulation['h']
     LJ_simulation['sim_z_max'] = step2z(LJ_simulation['step_list_max'][-1]-1, LJ_simulation['zfin'], LJ_simulation['zinit'], LJ_simulation['nsteps'])
     LJ_simulation['sim_chi_max'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['sim_z_max']+1))*LJ_simulation['h'] 
@@ -122,7 +129,11 @@ matter_power_spectrum='halofit')
 
 
     # derived parameters
-    FrontierE_simulation['nplanes'] =  len(FrontierE_simulation['step_list_max'])
+    FrontierE_simulation['nplanes'] =  3#len(FrontierE_simulation['step_list_max'])
+    FrontierE_simulation['n_steps_cmb'] = 0 
+
+
+    
     FrontierE_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(FrontierE_simulation['cosmo_ccl'],a=1./(FrontierE_simulation['z_cmb']+1))*FrontierE_simulation['h']
     FrontierE_simulation['sim_z_max'] = step2z(FrontierE_simulation['step_list_max'][-1]-1, FrontierE_simulation['zfin'], FrontierE_simulation['zinit'], FrontierE_simulation['nsteps'])
     FrontierE_simulation['sim_chi_max'] = ccl.background.comoving_radial_distance(FrontierE_simulation['cosmo_ccl'],a=1./(FrontierE_simulation['sim_z_max']+1))*FrontierE_simulation['h'] 
@@ -150,6 +161,9 @@ def FrontierE_simulation_hydro():
     FrontierE_simulation_hydro = FrontierE_simulation()
     FrontierE_simulation_hydro['name'] = "Frontier-E (hydro)"
     FrontierE_simulation_hydro['path_maps'] =  '/pscratch/sd/p/plarsen/mass_sheets_FrontierE_hydro/'
+    FrontierE_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE_hydro'
+    FrontierE_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE_hydro/map_16384_2p5_wiener/'
+
     FrontierE_simulation_hydro['fb'] = 0.1582
 
     return FrontierE_simulation_hydro

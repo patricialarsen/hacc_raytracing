@@ -75,3 +75,28 @@ def initialize_ray_state_restart(sim, pix_min, pix_max, comm,  add_psi=True):
         theta_m1, phi_m1, psi, psi_m1,
         kappa_born_alm, chi_km1, chi_k, step_idx)
 
+
+
+def print_mem_summary(label, comm):
+    import os
+    import resource
+    import psutil
+
+    proc = psutil.Process(os.getpid())
+    rss_gb = proc.memory_info().rss / 1024**3
+    peak_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2
+
+    vals = np.array([rss_gb, peak_gb], dtype=np.float64)
+    gathered = comm.gather(vals, root=0)
+
+    if comm.Get_rank() == 0:
+        arr = np.vstack(gathered)
+        print(
+            f"[mem] {label}: "
+            f"rss min/mean/max={arr[:,0].min():.2f}/"
+            f"{arr[:,0].mean():.2f}/{arr[:,0].max():.2f} GB, "
+            f"peak min/mean/max={arr[:,1].min():.2f}/"
+            f"{arr[:,1].mean():.2f}/{arr[:,1].max():.2f} GB",
+            flush=True,
+        )
+

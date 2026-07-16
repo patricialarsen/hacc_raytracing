@@ -21,9 +21,10 @@ from iterate_arrays import iterate_arrays
 from utils import  maps_from_jacobian, timed
 from utils import rotate_state_to_observer_basis, advance_ray_and_matrix_state, advance_chi_values
 
-from utils_mpi import initialize_ray_state_restart, initialize_ray_state_chunked
+from utils_mpi import initialize_ray_state_restart, initialize_ray_state_chunked, print_mem_summary
 
 from hacc_sims import LJ_simulation, FrontierE_simulation, FrontierE_simulation_hydro
+
 
 try:
     from mpi4py import MPI
@@ -37,7 +38,8 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-sim = FrontierE_simulation()
+sim = LJ_simulation()
+#sim = FrontierE_simulation()
 
 
 # additional born output at z=1, or separate born script?
@@ -61,7 +63,10 @@ chi_cmb = sim['chi_cmb']
 nside = sim['nside']
 
 # geometry definitions 
-lmax = 3*nside-1
+#lmax = 3*nside-1
+
+lmax = int(2.5*nside)
+
 npix = hp.nside2npix(nside)
 n_lms = int((lmax+2)*(lmax+1)/2) # size of alm array
 pix_min = rank * npix // size
@@ -107,6 +112,8 @@ else:
     theta0 = state.theta.copy()
     phi0 = state.phi.copy()
 
+print_mem_summary("after initialize", comm)
+
 
 print("Ray tracing over ", sim['nplanes'], " planes, starting with step ", state.step_idx, flush=True)    
 while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
@@ -147,6 +154,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
 
     advance_chi_values(state, chi_kp1)
 
+    print_mem_summary(f"step {state.step_idx} after iterate_arrays", comm)
 
     if write_checkpoints:
         with timed(f"step {state.step_idx} checkpoint writes"):
