@@ -49,6 +49,8 @@ def LJ_simulation():
     LJ_simulation['n_steps_cmb'] = 10 
     LJ_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/'
     LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_mpitest/'
+    LJ_simulation['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/alms/'
+
 #    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_alloutputs/'
 
 
@@ -83,8 +85,10 @@ matter_power_spectrum='halofit')
     LJ_simulation['nperst'] = [9536746.,77409054.,208227182.,380599129.,612972568.]
     LJ_simulation['nperst_steps'] = [0,1,2,3,4]
 
-    LJ_simulation['path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/alms/'
+    LJ_simulation['path_alms'] = LJ_simulation['output_path_alms']
     LJ_simulation['has_alms'] = False
+    LJ_simulation['nalms_stored'] = 0
+
     return LJ_simulation
 
 
@@ -121,6 +125,7 @@ def FrontierE_simulation():
     
     FrontierE_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE'
     FrontierE_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_wiener/'
+    FrontierE_simulation['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_alms_GO/'
 
 
     FrontierE_simulation['cosmo'] = FlatLambdaCDM(H0 = 67.66, Om0 = FrontierE_simulation["Omega_m"], Ob0 = 0.04897468161869667, Tcmb0 = 0, Neff = 0) 
@@ -129,7 +134,7 @@ matter_power_spectrum='halofit')
 
 
     # derived parameters
-    FrontierE_simulation['nplanes'] =  3#len(FrontierE_simulation['step_list_max'])
+    FrontierE_simulation['nplanes'] =len(FrontierE_simulation['step_list_max'])
     FrontierE_simulation['n_steps_cmb'] = 0 
 
 
@@ -150,8 +155,9 @@ matter_power_spectrum='halofit')
     FrontierE_simulation['nperst'] = None
     FrontierE_simulation['nperst_steps'] = None
 
-    FrontierE_simulation['path_alms'] = None
-    FrontierE_simulation['has_alms'] = False
+    FrontierE_simulation['path_alms'] = FrontierE_simulation['output_path_alms']
+    FrontierE_simulation['nalms_stored'] = 24
+    FrontierE_simulation['has_alms'] = True
     
     return FrontierE_simulation
     
@@ -161,10 +167,16 @@ def FrontierE_simulation_hydro():
     FrontierE_simulation_hydro = FrontierE_simulation()
     FrontierE_simulation_hydro['name'] = "Frontier-E (hydro)"
     FrontierE_simulation_hydro['path_maps'] =  '/pscratch/sd/p/plarsen/mass_sheets_FrontierE_hydro/'
-    FrontierE_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE_hydro'
-    FrontierE_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE_hydro/map_16384_2p5_wiener/'
+    FrontierE_simulation_hydro['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE_hydro/'
+    FrontierE_simulation_hydro['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE_hydro/map_16384_2p5_wiener/'
+    FrontierE_simulation_hydro['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_alms_hydro/'
+    FrontierE_simulation_hydro['path_alms'] = FrontierE_simulation_hydro['output_path_alms']
 
     FrontierE_simulation_hydro['fb'] = 0.1582
+    FrontierE_simulation_hydro['has_alms'] = True
+    FrontierE_simulation_hydro['nalms_stored'] = 24
+
+
 
     return FrontierE_simulation_hydro
     
@@ -198,6 +210,9 @@ def test_simulation():
 
     test_simulation['chi_source'] = ccl.background.comoving_radial_distance(test_simulation['cosmo_ccl'],a=1./(test_simulation['z_source']+1))*test_simulation['h']
 
+    test_simulation['path_alms'] = None
+    test_simulation['nalms_stored'] = 0
+    test_simulation['has_alms'] = False
 
     # derived parameters
     test_simulation['nplanes'] =  len(test_simulation['step_list_max'])

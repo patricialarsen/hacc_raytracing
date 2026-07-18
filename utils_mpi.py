@@ -100,3 +100,41 @@ def print_mem_summary(label, comm):
             flush=True,
         )
 
+def print_mem_summary_rank(label, comm):
+    import os
+    import resource
+    import psutil
+
+    rank = comm.Get_rank()
+
+    proc = psutil.Process(os.getpid())
+    rss_gb = proc.memory_info().rss / 1024**3
+    peak_gb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024**2
+
+    vals = np.array([rank, rss_gb, peak_gb], dtype=np.float64)
+    gathered = comm.gather(vals, root=0)
+
+    if rank == 0:
+        arr = np.vstack(gathered)
+
+        ranks = arr[:, 0].astype(int)
+        rss = arr[:, 1]
+        peak = arr[:, 2]
+
+        rss_min_i = np.argmin(rss)
+        rss_max_i = np.argmax(rss)
+        peak_min_i = np.argmin(peak)
+        peak_max_i = np.argmax(peak)
+
+        print(
+            f"[mem] {label}: "
+            f"rss min/mean/max="
+            f"{rss[rss_min_i]:.2f}(r{ranks[rss_min_i]})/"
+            f"{rss.mean():.2f}/"
+            f"{rss[rss_max_i]:.2f}(r{ranks[rss_max_i]}) GB, "
+            f"peak min/mean/max="
+            f"{peak[peak_min_i]:.2f}(r{ranks[peak_min_i]})/"
+            f"{peak.mean():.2f}/"
+            f"{peak[peak_max_i]:.2f}(r{ranks[peak_max_i]}) GB",
+            flush=True,
+        )

@@ -15,7 +15,20 @@ import math
 from hacc_sims import LJ_simulation as sim
 from hacc_sims import step2z
 from seam_correction import correct_density_sheet_y0
-from sht_utils import map2alm_ducc_lsmr
+from sht_utils import map2alm_ducc_lsmr, map2alm_ducc_lsmr_from_weighted_adjoint
+
+from contextlib import contextmanager
+import time
+
+@contextmanager
+def timed_rank(label, comm):
+    t0 = time.perf_counter()
+    rank = comm.Get_rank()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - t0
+        print(f"[timer] {label}: {dt:.2f} s, on rank {rank:d}", flush=True)
 
 
 # constants 
@@ -88,7 +101,7 @@ def downgrade_nested_surface_density(map_nest, nside_out):
 
 
 
-def get_input_alm_chi_z(step_idx, sim):
+def get_input_alm_chi_z(step_idx, sim, comm=None):
     """ Read input density map and scale to convergence"""
 
     if not sim['has_alms']:
@@ -96,15 +109,52 @@ def get_input_alm_chi_z(step_idx, sim):
         
     chi_min, chi_max, chi_av = get_chi_step(step_idx, sim)
     z_av = z_at_value(sim['cosmo'].comoving_distance, chi_av/sim['h']*u.Mpc, method='bounded',zmin=0,zmax=10)
-    alm_read = hp.read_alm(sim['path_alms']+'alms_'+str(sim['step_list_max'][step_idx])+'_'+str(sim['step_list_min'][step_idx])+'_nside_'+str(sim['nside'])+'.fits')
-                           
-    n_per_steradian = sim['nperst'][step_idx]
+
+    with timed_rank("Reading alm data", comm):
+        alm_read = hp.read_alm(sim['path_alms'] + '/alm_map_'+str(step_idx)+'.fits')
+
+    n_per_steradian = float(np.loadtxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt'))
+    #n_per_steradian = sim['nperst'][step_idx]
     kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av *sim['mpp'] * n_per_steradian
     
     return alm_read, chi_av, kappa_fac, n_per_steradian
 
+def precompute_n_perst(step_idx,  sim, comm=None):
+    """ Read input density map and scale to convergence"""
+
+    chi_min, chi_max, chi_av = get_chi_step(step_idx, sim)
+    z_av = z_at_value(sim['cosmo'].comoving_distance, chi_av/sim['h']*u.Mpc, method='bounded',zmin=0,zmax=10)
+
+    if sim['name']=="Last Journey":
+        map_read = np.fromfile(sim['path_maps']+'density_'+str(sim['step_list_max'][step_idx])+'_'+str(sim['step_list_min'][step_idx])+'.bin','<f8')
+        dist_pix = sim['signed_dist_pix']
+        map_read, eps = correct_density_sheet_y0(map_read, dist_pix, sim['A_array'][step_idx], sim['w_array'][step_idx], max_dist=20)
+
+    if sim['name']=="Frontier-E":
+        with timed_rank("Reading in data", comm):
+            map_read = h5py.File(sim['path_maps']+'GO_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
+            map_read = map_read['rho'][:]
+
+    if sim['name']=="Frontier-E (hydro)":
+        with timed_rank("Reading in data", comm):
+            map_read = h5py.File(sim['path_maps']+'hydro_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
+            map_read = map_read['rho'][:]
+
+
+    if sim['name']=="Last Journey":
+        n_per_steradian = np.mean(map_read)
+    if sim['name']== "Frontier-E (hydro)":
+        fb_fact = (1-sim['fb'])**2 + sim['fb']**2
+        n_per_steradian = np.mean(map_read)/ fb_fact /sim['mpp'] #(1-f_b)^2 + fb^2
+    else:
+        n_per_steradian = np.mean(map_read)/sim['mpp']
+
+    np.savetxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt', np.array([n_per_steradian]))
+
+    return 
+
     
-def get_input_map_chi_z(step_idx,  sim):
+def get_input_map_chi_z(step_idx,  sim, comm=None):
     """ Read input density map and scale to convergence"""
 
     chi_min, chi_max, chi_av = get_chi_step(step_idx, sim)
@@ -116,16 +166,20 @@ def get_input_map_chi_z(step_idx,  sim):
         map_read, eps = correct_density_sheet_y0(map_read, dist_pix, sim['A_array'][step_idx], sim['w_array'][step_idx], max_dist=20)
         
     if sim['name']=="Frontier-E":
-        map_read = h5py.File(sim['path_maps']+'GO_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
-        map_read = map_read['rho'][:]
+        with timed_rank("Reading in data", comm):
+            map_read = h5py.File(sim['path_maps']+'GO_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
+            map_read = map_read['rho'][:]
         
     if sim['name']=="Frontier-E (hydro)": 
-        map_read = h5py.File(sim['path_maps']+'hydro_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
-        map_read = map_read['rho'][:]
+        with timed_rank("Reading in data", comm):
+            map_read = h5py.File(sim['path_maps']+'hydro_map_' +str(sim['step_list_max'][step_idx])+'_'+str(int(sim['step_list_min'][step_idx]-1))+'_dens.hdf5','r')
+            map_read = map_read['rho'][:]
 
 
-    map_read = downgrade_nested_surface_density(map_read, sim['nside'])    # safe for nside >8192
-    map_read = hp.reorder(map_read,n2r=True)    # safe for nside >8192
+    #if sim['nside']
+    #map_read = downgrade_nested_surface_density(map_read, sim['nside'])    # safe for nside >8192
+    with timed_rank("Reordering data", comm):
+        map_read = hp.reorder(map_read,n2r=True)    # safe for nside >8192
 
 
     if sim['name']=="Last Journey":
@@ -141,26 +195,45 @@ def get_input_map_chi_z(step_idx,  sim):
         kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av * np.mean(map_read)
         
     return map_read, chi_av, kappa_fac, n_per_steradian
-    
 
 
-def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=False, use_pixel_weights=True, sn_taper=10.0, sn_end=5.0, min_taper_width=500, ell_cut=None, apply_pix_window=True, test_randomize_phase=False, test_synthetic_alms=False, downgrade_hq=False):
+
+def precompute_input_map_alms(step_idx, sim, lmax, nthreads, comm=None):
     """ Read input density map and scale to convergence"""
-    # note to self, check which ones of these outputs are being used
-    if downgrade_hq:
-        alms_lens, chi_av, kappa_fac, n_per_steradian = get_input_alm_chi_z(step_idx, sim)
+    map_read,  chi_av, kappa_fac, n_per_steradian = get_input_map_chi_z(step_idx, sim, comm=comm)
+
+    np.savetxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt', np.array([n_per_steradian]))
+    with timed_rank("Computing alms", comm):
+        map_read = map_read/n_per_steradian
+        map_read = map_read -1 
+        alms_lens = map2alm_ducc_lsmr_from_weighted_adjoint(map_read, sim['nside'], lmax, nthreads)
+    with timed_rank("Writing alms", comm):
+        hp.write_alm(sim['output_path_alms'] + '/alm_map_'+str(step_idx)+'.fits', alms_lens, overwrite=True)
+
+    return alms_lens
+
+
+def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=False, use_pixel_weights=True, sn_taper=10.0, sn_end=5.0, min_taper_width=500, ell_cut=None, apply_pix_window=True, test_randomize_phase=False, test_synthetic_alms=False, save_alms=False, comm=None):
+    """ Read input density map and scale to convergence"""
+    if sim['has_alms'] and step_idx<sim['nalms_stored']:
+        alms_lens, chi_av, kappa_fac, n_per_steradian = get_input_alm_chi_z(step_idx, sim, comm=comm)
     else:
-        map_read,  chi_av, kappa_fac, n_per_steradian = get_input_map_chi_z(step_idx, sim)
+        map_read,  chi_av, kappa_fac, n_per_steradian = get_input_map_chi_z(step_idx, sim, comm=comm)
         if sim['nside']<=8192:
             alms_lens = hp.map2alm((map_read/n_per_steradian - 1),lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights, ) 
         else:
-            alms_lens = map2alm_ducc_lsmr_from_weighted_adjoint((map_read/n_per_steradian - 1), sim['nside'], lmax, nthreads)
-            #alms_lens = map2alm_ducc_lsmr((map_read/n_per_steradian - 1), sim['nside'], lmax, nthreads)
-        
+            with timed_rank("Computing alms", comm):
+                map_read = map_read/n_per_steradian
+                map_read = map_read -1 
+                alms_lens = map2alm_ducc_lsmr_from_weighted_adjoint(map_read, sim['nside'], lmax, nthreads)
 
     cl_lens = hp.alm2cl(alms_lens)
     if save_cls:
         np.savetxt(sim['output_path_cls']+'cl_file_'+str(step_idx)+'.txt', cl_lens)
+    if save_alms:
+        if (not sim['has_alms']) or (step_idx>=sim['nalms_stored']):
+            with timed_rank("Writing alms", comm):
+                hp.write_alm(sim['output_path_alms'] + '/alm_map_'+str(step_idx)+'.fits', alms_lens, overwrite=True)
 
     if test_synthetic_alms:
         alms_lens = hp.synalm(cl_lens, lmax=lmax, mmax=lmax, new=True,)
@@ -183,6 +256,8 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
 
 
     return chi_av, alms_filtered
+
+
 
 
 def create_gauss_map_chi_z(read_path, run_fresh=False, nside_out = 8192):

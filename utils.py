@@ -19,6 +19,17 @@ def timed(label):
         print(f"[timer] {label}: {dt:.2f} s", flush=True)
 
 
+@contextmanager
+def timed_rank(label, comm):
+    t0 = time.perf_counter()
+    rank = comm.Get_rank()
+    try:
+        yield
+    finally:
+        dt = time.perf_counter() - t0
+        print(f"[timer] {label}: {dt:.2f} s, on rank {rank:d}", flush=True)
+
+
 @dataclass
 class RayState:
     A_11_m1: np.ndarray

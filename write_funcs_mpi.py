@@ -3,6 +3,7 @@ import shutil
 import numpy as np
 import healpy as hp
 from simulation import get_chi_step
+import h5py
 
 try:
     from mpi4py import MPI
@@ -150,25 +151,30 @@ def write_checkpoint_dir(step_idx, sim, kappa_map, shear1_map, shear2_map,
     comm.Barrier()
 
     # gather all maps onto rank 0 
-    kappa_full = gather_map_to_rank0_64bit(kappa_map, pix_min, pix_max, npix, comm)
-    shear1_full = gather_map_to_rank0_64bit(shear1_map, pix_min, pix_max, npix, comm)
-    shear2_full = gather_map_to_rank0_64bit(shear2_map, pix_min, pix_max, npix, comm)
-    w_full = gather_map_to_rank0_64bit(w_map, pix_min, pix_max, npix, comm)
-    theta_full = gather_map_to_rank0_64bit(theta, pix_min, pix_max, npix, comm)
-    phi_full = gather_map_to_rank0_64bit(phi, pix_min, pix_max, npix, comm)
-
+    
+    tmp = gather_map_to_rank0_64bit(kappa_map, pix_min, pix_max, npix, comm)
     if rank==0:
-        hp.write_map(tmp + '/kappa.fits', kappa_full, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/shear1.fits', shear1_full, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/shear2.fits', shear2_full, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/w_map.fits', w_full, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/theta.fits', theta_full, dtype=np.float64, overwrite=True)
-        hp.write_map(tmp + '/phi.fits', phi_full, dtype=np.float64, overwrite=True)
+        hp.write_map(tmp + '/kappa.fits', tmp, dtype=np.float64, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(shear1_map, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(tmp + '/shear1.fits', tmp, dtype=np.float64, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(shear2_map, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(tmp + '/shear2.fits', tmp, dtype=np.float64, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(w_map, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(tmp + '/w_map.fits', tmp, dtype=np.float64, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(theta, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(tmp + '/theta.fits', tmp, dtype=np.float64, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(phi, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(tmp + '/phi.fits', tmp, dtype=np.float64, overwrite=True)
 
     if add_psi:
-        psi_full = gather_map_to_rank0_64bit(psi, pix_min, pix_max, npix, comm)
+        tmp = gather_map_to_rank0_64bit(psi, pix_min, pix_max, npix, comm)
         if rank==0:
-            hp.write_map(tmp + '/psi.fits', psi_full, dtype=np.float64, overwrite=True)
+            hp.write_map(tmp + '/psi.fits', tmp, dtype=np.float64, overwrite=True)
 
     if born_CMB:
         if rank==0:
@@ -200,6 +206,73 @@ def write_checkpoint_dir(step_idx, sim, kappa_map, shear1_map, shear2_map,
 
 
 
+def write_checkpoint_dir_parallel(step_idx, sim, kappa_map, shear1_map, shear2_map,
+                         w_map, theta, phi, pix_min, pix_max, comm, psi=None, 
+                         kappa_born_alm=None, add_psi=True, born_CMB=True):
+
+    rank = comm.Get_rank()
+    npix = hp.nside2npix(sim["nside"])
+
+    path_out = sim['output_path_rt']
+    tmp = path_out + 'checkpoint_tmp'
+    current = path_out + 'checkpoint_current'
+    previous = path_out + 'checkpoint_prev'
+    previous_m1 = path_out + 'checkpoint_prev_prev'
+
+    if rank==0:
+        if os.path.exists(tmp):
+            shutil.rmtree(tmp)
+        os.makedirs(tmp)
+    comm.Barrier()
+
+    # gather all maps onto rank 0 
+    
+    with h5py.File(tmp+'/maps.hdf5','w', driver="mpio", comm=comm) as f:
+        dk = f.create_dataset("kappa", shape=(npix,), dtype="f8")
+        ds1 = f.create_dataset("shear1", shape=(npix,), dtype="f8")
+        ds2 = f.create_dataset("shear2", shape=(npix,), dtype="f8")
+        dw = f.create_dataset("w_map", shape=(npix,), dtype="f8")
+        dt = f.create_dataset("theta", shape=(npix,), dtype="f8")
+        dp = f.create_dataset("phi", shape=(npix,), dtype="f8")
+        dk[pix_min:pix_max] = np.asarray(kappa_map, dtype=np.float64)
+        ds1[pix_min:pix_max] = np.asarray(shear1_map, dtype=np.float64)
+        ds2[pix_min:pix_max] = np.asarray(shear2_map, dtype=np.float64)
+        dw[pix_min:pix_max] = np.asarray(w_map, dtype=np.float64)
+        dt[pix_min:pix_max] = np.asarray(theta, dtype=np.float64)
+        dp[pix_min:pix_max] = np.asarray(phi, dtype=np.float64)
+        if add_psi:
+            dps = f.create_dataset("psi", shape=(npix,), dtype="f8")
+            dps[pix_min:pix_max] = np.asarray(psi, dtype=np.float64)
+
+
+    if born_CMB:
+        if rank==0:
+            hp.write_alm(tmp + '/kappa_born_CMB_alm.fits', kappa_born_alm, overwrite=True)
+    comm.Barrier()
+
+    # write checkpoint metadata and rename folders to update checkpoints iteratively
+    if rank==0:
+        if step_idx>sim['nplanes']-1:
+            with open(tmp + '/checkpoint_meta.txt', 'w') as f:
+                f.write(str(step_idx) + '\n')
+        else:
+            step_high = sim['step_list_max'][step_idx]
+            step_low = sim['step_list_min'][step_idx]
+            with open(tmp + '/checkpoint_meta.txt', 'w') as f:
+                f.write(str(step_idx) + '\n')
+                f.write(f'{step_high}_{step_low}\n')
+        if os.path.exists(previous_m1):
+            shutil.rmtree(previous_m1)
+        if os.path.exists(previous):
+            os.rename(previous, previous_m1)
+        if os.path.exists(current):
+            os.rename(current, previous)
+        os.rename(tmp, current)
+
+    comm.Barrier()
+    return 
+
+
     
     
 def write_outputs(step_idx, sim, pix_min, pix_max, comm, kappa_map=None, shear1_map=None, shear2_map=None, w_map=None, CMB=False, kappa_born=None, test=False, born_only=False):
@@ -228,18 +301,91 @@ def write_outputs(step_idx, sim, pix_min, pix_max, comm, kappa_map=None, shear1_
             hp.write_map(path_out + 'kappa_born_' + suffix, kappa_born, dtype=np.float32, overwrite=True)
             
     if not born_only:
-        kappa_full = gather_map_to_rank0(kappa_map, pix_min, pix_max, npix, comm)
-        shear1_full = gather_map_to_rank0(shear1_map, pix_min, pix_max, npix, comm)
-        shear2_full = gather_map_to_rank0(shear2_map, pix_min, pix_max, npix, comm)
-        w_full = gather_map_to_rank0(w_map, pix_min, pix_max, npix, comm)
+        tmp = gather_map_to_rank0(kappa_map, pix_min, pix_max, npix, comm)
         if rank == 0:
-            hp.write_map(path_out + 'kappa_' + suffix, kappa_full, dtype=np.float32, overwrite=True)
-            hp.write_map(path_out + 'shear1_' + suffix, shear1_full, dtype=np.float32, overwrite=True)
-            hp.write_map(path_out + 'shear2_' + suffix, shear2_full, dtype=np.float32, overwrite=True)
-            hp.write_map(path_out + 'w_map_' + suffix, w_full, dtype=np.float32, overwrite=True)
+            hp.write_map(path_out + 'kappa_' + suffix, tmp, dtype=np.float32, overwrite=True)
+        tmp = gather_map_to_rank0(shear1_map, pix_min, pix_max, npix, comm)
+        if rank == 0:
+            hp.write_map(path_out + 'shear1_' + suffix, tmp, dtype=np.float32, overwrite=True)
+        tmp = gather_map_to_rank0(shear2_map, pix_min, pix_max, npix, comm)
+        if rank == 0:
+            hp.write_map(path_out + 'shear2_' + suffix, tmp, dtype=np.float32, overwrite=True)
+        tmp = gather_map_to_rank0(w_map, pix_min, pix_max, npix, comm)
+        if rank == 0:
+            hp.write_map(path_out + 'w_map_' + suffix, tmp, dtype=np.float32, overwrite=True)
 
     return 
 
+
+def write_outputs_parallel(step_idx, sim, pix_min, pix_max, comm, kappa_map=None, shear1_map=None, shear2_map=None, w_map=None, CMB=False, kappa_born=None, test=False, born_only=False):
+    """After basis rotation"""
+
+    rank = comm.Get_rank()
+    npix = hp.nside2npix(sim["nside"])
+    path_out = sim['output_path_rt']
+    
+    if rank==0 and CMB and kappa_born is None:
+        raise ValueError("CMB=True but kappa_born=None")
+    if CMB:
+        suffix = 'CMB.hdf5'
+    elif test:
+        suffix = 'test.hdf5'
+    else:
+        if step_idx>sim['nplanes']-1:
+            suffix = "tail_plane_" + str(step_idx - sim['nplanes']) + '.hdf5'
+        else:
+            step_high = sim['step_list_max'][step_idx]
+            step_low = sim['step_list_min'][step_idx]
+            suffix = str(step_high)+'_'+str(step_low)+'.hdf5'
+            
+    if kappa_born is not None:
+        if rank==0:
+            hp.write_map(path_out + 'kappa_born_' + suffix, kappa_born, dtype=np.float32, overwrite=True)
+
+    if not born_only:
+        with h5py.File(path_out+'/'+suffix,'w', driver="mpio", comm=comm) as f:
+            dk = f.create_dataset("kappa", shape=(npix,), dtype="f8")
+            ds1 = f.create_dataset("shear1", shape=(npix,), dtype="f8")
+            ds2 = f.create_dataset("shear2", shape=(npix,), dtype="f8")
+            dw = f.create_dataset("w_map", shape=(npix,), dtype="f8")
+            dk[pix_min:pix_max] = np.asarray(kappa_map, dtype=np.float64)
+            ds1[pix_min:pix_max] = np.asarray(shear1_map, dtype=np.float64)
+            ds2[pix_min:pix_max] = np.asarray(shear2_map, dtype=np.float64)
+            dw[pix_min:pix_max] = np.asarray(w_map, dtype=np.float64)
+    return 
+
+def write_native_state_parallel( step_idx, sim, A_11, A_12, A_21, A_22, theta, phi, psi, pix_min, pix_max, comm):
+    
+    rank = comm.Get_rank()
+    npix = hp.nside2npix(sim["nside"])
+
+    path_out = sim['output_path_rt']
+    if step_idx>sim['nplanes']-1:
+        suffix = "tail_plane_" + str(step_idx - sim['nplanes']) + '_source_basis.hdf5'
+    else:
+        step_high = sim['step_list_max'][step_idx]
+        step_low = sim['step_list_min'][step_idx]
+        suffix = str(step_high)+'_'+str(step_low)+'_source_basis.hdf5'
+
+    with h5py.File(path_out+ '/' + suffix,'w', driver="mpio", comm=comm) as f:
+        dk = f.create_dataset("dA_11_", shape=(npix,), dtype="f8")
+        ds1 = f.create_dataset("A_12_", shape=(npix,), dtype="f8")
+        ds2 = f.create_dataset("A_21_", shape=(npix,), dtype="f8")
+        dw = f.create_dataset("dA_22_", shape=(npix,), dtype="f8")
+        dt = f.create_dataset("theta", shape=(npix,), dtype="f8")
+        dp = f.create_dataset("phi", shape=(npix,), dtype="f8")
+        dps = f.create_dataset("psi", shape=(npix,), dtype="f8")
+
+        dk[pix_min:pix_max] = np.asarray(A_11-1.0, dtype=np.float64)
+        ds1[pix_min:pix_max] = np.asarray(A_12, dtype=np.float64)
+        ds2[pix_min:pix_max] = np.asarray(A_21, dtype=np.float64)
+        dw[pix_min:pix_max] = np.asarray(A_22-1.0, dtype=np.float64)
+        dt[pix_min:pix_max] = np.asarray(theta, dtype=np.float64)
+        dp[pix_min:pix_max] = np.asarray(phi, dtype=np.float64)
+        dps[pix_min:pix_max] = np.asarray(psi, dtype=np.float64)
+
+    return 
+    
 
 def write_native_state( step_idx, sim, A_11, A_12, A_21, A_22, theta, phi, psi, pix_min, pix_max, comm):
     
@@ -254,22 +400,27 @@ def write_native_state( step_idx, sim, A_11, A_12, A_21, A_22, theta, phi, psi, 
         step_low = sim['step_list_min'][step_idx]
         suffix = str(step_high)+'_'+str(step_low)+'_source_basis.fits'
 
-    A_11_full = gather_map_to_rank0_64bit(A_11, pix_min, pix_max, npix, comm)
-    A_12_full = gather_map_to_rank0_64bit(A_12, pix_min, pix_max, npix, comm)
-    A_21_full = gather_map_to_rank0_64bit(A_21, pix_min, pix_max, npix, comm)
-    A_22_full = gather_map_to_rank0_64bit(A_22, pix_min, pix_max, npix, comm)
-    theta_full = gather_map_to_rank0_64bit(theta, pix_min, pix_max, npix, comm)
-    phi_full = gather_map_to_rank0_64bit(phi, pix_min, pix_max, npix, comm)
-    psi_full = gather_map_to_rank0_64bit(psi, pix_min, pix_max, npix, comm)
-
+    tmp = gather_map_to_rank0_64bit(A_11, pix_min, pix_max, npix, comm)
     if rank==0:
-        hp.write_map(path_out + 'dA_11_' + suffix, A_11_full-1.0, dtype=np.float32, overwrite=True)
-        hp.write_map(path_out + 'A_12_' + suffix, A_12_full, dtype=np.float32, overwrite=True)
-        hp.write_map(path_out + 'A_21_' + suffix, A_21_full, dtype=np.float32, overwrite=True)
-        hp.write_map(path_out + 'dA_22_' + suffix, A_22_full-1.0, dtype=np.float32, overwrite=True)
-        hp.write_map(path_out + 'theta_' + suffix, theta_full, dtype=np.float32, overwrite=True)
-        hp.write_map(path_out + 'phi_' + suffix, phi_full, dtype=np.float32, overwrite=True)
-        hp.write_map(path_out + 'psi_' + suffix, psi_full, dtype=np.float32, overwrite=True)
+        hp.write_map(path_out + 'dA_11_' + suffix, tmp-1.0, dtype=np.float32, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(A_12, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(path_out + 'A_12_' + suffix, tmp, dtype=np.float32, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(A_21, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(path_out + 'A_21_' + suffix, tmp, dtype=np.float32, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(A_22, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(path_out + 'dA_22_' + suffix, tmp-1.0, dtype=np.float32, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(theta, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(path_out + 'theta_' + suffix, tmp, dtype=np.float32, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(phi, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(path_out + 'phi_' + suffix, tmp, dtype=np.float32, overwrite=True)
+    tmp = gather_map_to_rank0_64bit(psi, pix_min, pix_max, npix, comm)
+    if rank==0:
+        hp.write_map(path_out + 'psi_' + suffix, tmp, dtype=np.float32, overwrite=True)
 
     return 
 
@@ -282,49 +433,114 @@ def read_checkpoint_meta(checkpoint_dir):
 
 
 
+
+def read_checkpoint_state_chunked_parallel(checkpoint_dir, pix_min, pix_max, npix, comm, add_psi=True, born_CMB=True,):
+    rank = comm.Get_rank()
+    
+    with h5py.File(checkpoint_dir + "/maps.hdf5", "r", driver="mpio", comm=comm) as f:
+        kappa = f["kapppa"][pix_min:pix_max]
+        shear1 = f["shear1"][pix_min:pix_max]
+        shear2 = f["shear2"][pix_min:pix_max]
+        w_map = f["w_map"][pix_min:pix_max]
+        theta = f["theta"][pix_min:pix_max]
+        phi = f["phi"][pix_min:pix_max]
+        if add_psi:
+            psi = f["psi"][pix_min:pix_max]
+
+
+    A_11 = 1.0 - kappa - shear1
+    A_22 = 1.0 - kappa + shear1
+    A_12 = shear2 + w_map
+    A_21 = shear2 - w_map
+
+
+    if born_CMB:
+        if rank==0:
+            tmp = hp.read_alm(checkpoint_dir + '/kappa_born_CMB_alm.fits')
+        else:
+            tmp = None
+        kappa_born_alm = comm.bcast(tmp, root=0)
+
+    return theta, phi, A_11, A_22, A_12, A_21, psi, kappa_born_alm
+    
+
+
 def read_checkpoint_state_chunked(checkpoint_dir, pix_min, pix_max, npix, comm, add_psi=True, born_CMB=True,):
     rank = comm.Get_rank()
 
     if rank == 0:
-        kappa = hp.read_map(checkpoint_dir + '/kappa.fits').astype(np.float64)
-        shear1 = hp.read_map(checkpoint_dir + '/shear1.fits').astype(np.float64)
-        shear2 = hp.read_map(checkpoint_dir + '/shear2.fits').astype(np.float64)
-        w_map = hp.read_map(checkpoint_dir + '/w_map.fits').astype(np.float64)
-        theta = hp.read_map(checkpoint_dir + '/theta.fits').astype(np.float64)
-        phi = hp.read_map(checkpoint_dir + '/phi.fits').astype(np.float64)
-
-        A_11 = 1.0 - kappa - shear1
-        A_22 = 1.0 - kappa + shear1
-        A_12 = shear2 + w_map
-        A_21 = shear2 - w_map
-
-        if add_psi:
-            psi = hp.read_map(checkpoint_dir + '/psi.fits').astype(np.float64)
-        else:
-            psi = None
-
-        if born_CMB:
-            kappa_born_alm = hp.read_alm(checkpoint_dir + '/kappa_born_CMB_alm.fits')
-        else:
-            kappa_born_alm = None
+        tmp = hp.read_map(checkpoint_dir + '/kappa.fits').astype(np.float64)
     else:
-        theta = phi = A_11 = A_22 = A_12 = A_21 = psi = None
-        kappa_born_alm = None
+        tmp =None
+    kappa = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
 
-    theta = scatter_map_from_rank0(theta, pix_min, pix_max, npix, comm)
-    phi = scatter_map_from_rank0(phi, pix_min, pix_max, npix, comm)
-    A_11 = scatter_map_from_rank0(A_11, pix_min, pix_max, npix, comm)
-    A_22 = scatter_map_from_rank0(A_22, pix_min, pix_max, npix, comm)
-    A_12 = scatter_map_from_rank0(A_12, pix_min, pix_max, npix, comm)
-    A_21 = scatter_map_from_rank0(A_21, pix_min, pix_max, npix, comm)
+    if rank == 0:
+        tmp = hp.read_map(checkpoint_dir + '/shear1.fits').astype(np.float64)
+    else:
+        tmp =None
+    shear1 = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
+    
+    if rank == 0:
+        tmp = hp.read_map(checkpoint_dir + '/shear2.fits').astype(np.float64)
+    else:
+        tmp =None
+    shear2 = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
+    
+    if rank == 0:
+        tmp = hp.read_map(checkpoint_dir + '/w_map.fits').astype(np.float64)
+    else:
+        tmp =None
+    w_map = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
+    
+    if rank == 0:
+        tmp = hp.read_map(checkpoint_dir + '/theta.fits').astype(np.float64)
+    else:
+        tmp =None
+    theta = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
+    
+    if rank == 0:
+        tmp = hp.read_map(checkpoint_dir + '/phi.fits').astype(np.float64)
+    else:
+        tmp =None
+    phi = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
+
+    A_11 = 1.0 - kappa - shear1
+    A_22 = 1.0 - kappa + shear1
+    A_12 = shear2 + w_map
+    A_21 = shear2 - w_map
 
     if add_psi:
-        psi = scatter_map_from_rank0(psi, pix_min, pix_max, npix, comm)
-    else:
-        psi = np.zeros(pix_max - pix_min, dtype=np.float64)
+        if rank==0:
+            tmp = hp.read_map(checkpoint_dir + '/psi.fits').astype(np.float64)
+        else:
+            tmp = None
+        psi = scatter_map_from_rank0(tmp, pix_min, pix_max, npix, comm)
 
     if born_CMB:
-        kappa_born_alm = comm.bcast(kappa_born_alm, root=0)
+        if rank==0:
+            tmp = hp.read_alm(checkpoint_dir + '/kappa_born_CMB_alm.fits')
+        else:
+            tmp = None
+        kappa_born_alm = comm.bcast(tmp, root=0)
+
+    #else:
+    #    theta = phi = A_11 = A_22 = A_12 = A_21 = psi = None
+    #    kappa_born_alm = None
+
+    #theta = scatter_map_from_rank0(theta, pix_min, pix_max, npix, comm)
+    #phi = scatter_map_from_rank0(phi, pix_min, pix_max, npix, comm)
+    #A_11 = scatter_map_from_rank0(A_11, pix_min, pix_max, npix, comm)
+    #A_22 = scatter_map_from_rank0(A_22, pix_min, pix_max, npix, comm)
+    #A_12 = scatter_map_from_rank0(A_12, pix_min, pix_max, npix, comm)
+    #A_21 = scatter_map_from_rank0(A_21, pix_min, pix_max, npix, comm)
+
+    #if add_psi:
+    #    psi = scatter_map_from_rank0(psi, pix_min, pix_max, npix, comm)
+    #else:
+    #    psi = np.zeros(pix_max - pix_min, dtype=np.float64)
+
+    #if born_CMB:
+    #    kappa_born_alm = comm.bcast(kappa_born_alm, root=0)
 
     return theta, phi, A_11, A_22, A_12, A_21, psi, kappa_born_alm
     
