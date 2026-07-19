@@ -44,7 +44,7 @@ def initialize_ray_state_chunked(nside, pix_min, pix_max,  lmax, output_born):
 
     if rank==0:
         if output_born:
-            alm_init = np.zeros(np.zeros(hp.Alm.getsize(lmax), dtype=np.complex128))
+            alm_init = np.zeros(hp.Alm.getsize(lmax), dtype=np.complex128)
         else:
             alm_init = np.zeros(0, dtype=np.complex128)
         return RayState(

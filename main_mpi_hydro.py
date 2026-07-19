@@ -39,7 +39,7 @@ rank = comm.Get_rank()
 size = comm.Get_size()
 
 #sim = LJ_simulation()
-sim = FrontierE_simulation()
+sim = FrontierE_simulation_hydro()
 
 
 # additional born output at z=1, or separate born script?
@@ -50,8 +50,8 @@ restart = idx_start==1
 write_checkpoints = False
 write_all_rotated_steps = False
 write_all_unrotated_steps = False
-write_unrotated_step = [1,6, 13, 23, 36, 44, 63]
-write_rotated_step = [1, 6, 13, 23, 36, 44, 63] 
+write_unrotated_step = [6,13, 23, 36, 44, 63]
+write_rotated_step = [ 6, 13, 23, 36, 44, 63] 
 nthreads = 128
 
 output_born=False
@@ -203,7 +203,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
     print('finished writing stuff')
     state.step_idx +=1 
 
-cmb_convert=False
+cmb_convert=True
 if cmb_convert:
     advance_ray_and_matrix_state( state, gtheta2, gphi2, U11, U12, U22, chi_cmb )
     del gtheta2, gphi2, U11, U12, U22

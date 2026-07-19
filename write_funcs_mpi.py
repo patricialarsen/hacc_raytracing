@@ -324,8 +324,8 @@ def write_outputs_parallel(step_idx, sim, pix_min, pix_max, comm, kappa_map=None
     npix = hp.nside2npix(sim["nside"])
     path_out = sim['output_path_rt']
     
-    if rank==0 and CMB and kappa_born is None:
-        raise ValueError("CMB=True but kappa_born=None")
+    #if rank==0 and CMB and kappa_born is None:
+    #    raise ValueError("CMB=True but kappa_born=None")
     if CMB:
         suffix = 'CMB.hdf5'
     elif test:

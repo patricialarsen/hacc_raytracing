@@ -35,7 +35,7 @@ nside = sim['nside']
 
 lmax = int(2.5*nside)
 
-step_idx = 10
+step_idx = 0
 print("Precomputing alms for  ", sim['nplanes'], " planes, starting with step ", step_idx, flush=True)    
 while step_idx<24:#sim['nplanes']:
     print('step_idx',step_idx, flush=True)   

@@ -113,9 +113,23 @@ def get_input_alm_chi_z(step_idx, sim, comm=None):
     with timed_rank("Reading alm data", comm):
         alm_read = hp.read_alm(sim['path_alms'] + '/alm_map_'+str(step_idx)+'.fits')
 
+    if sim['name']=="Frontier-E":
+        alm_read  /= sim["mpp"]
+        alm_read[0] = 0.0
+    elif sim['name']=="Frontier-E (hydro)":
+        fb_fact = (1-sim['fb'])**2 + sim['fb']**2
+        alm_read  /= sim["mpp"]
+        alm_read /= fb_fact
+        alm_read[0] = 0.0
+
     n_per_steradian = float(np.loadtxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt'))
     #n_per_steradian = sim['nperst'][step_idx]
-    kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av *sim['mpp'] * n_per_steradian
+    if sim['name']=="Frontier-E (hydro)":
+        # n_per_steradian = mean()/ mpp / fb_fact
+        fb_fact = (1-sim['fb'])**2 + sim['fb']**2
+        kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av *sim['mpp'] * n_per_steradian  * fb_fact
+    else:
+        kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av *sim['mpp'] * n_per_steradian
     
     return alm_read, chi_av, kappa_fac, n_per_steradian
 
@@ -204,7 +218,7 @@ def precompute_input_map_alms(step_idx, sim, lmax, nthreads, comm=None):
 
     np.savetxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt', np.array([n_per_steradian]))
     with timed_rank("Computing alms", comm):
-        map_read = map_read/n_per_steradian
+        map_read = map_read/np.mean(map_read)
         map_read = map_read -1 
         alms_lens = map2alm_ducc_lsmr_from_weighted_adjoint(map_read, sim['nside'], lmax, nthreads)
     with timed_rank("Writing alms", comm):
@@ -223,7 +237,7 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
             alms_lens = hp.map2alm((map_read/n_per_steradian - 1),lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights, ) 
         else:
             with timed_rank("Computing alms", comm):
-                map_read = map_read/n_per_steradian
+                map_read = map_read/np.mean(map_read)
                 map_read = map_read -1 
                 alms_lens = map2alm_ducc_lsmr_from_weighted_adjoint(map_read, sim['nside'], lmax, nthreads)
 

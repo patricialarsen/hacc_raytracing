@@ -62,8 +62,8 @@ matter_power_spectrum='halofit')
     # derived parameters
     #LJ_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
 
-    LJ_simulation['nplanes'] =  3#len(FrontierE_simulation['step_list_max'])
-    LJ_simulation['n_steps_cmb'] = 0 
+    LJ_simulation['nplanes'] =  len(FrontierE_simulation['step_list_max'])
+    #LJ_simulation['n_steps_cmb'] = 10 
 
 
     
@@ -135,7 +135,7 @@ matter_power_spectrum='halofit')
 
     # derived parameters
     FrontierE_simulation['nplanes'] =len(FrontierE_simulation['step_list_max'])
-    FrontierE_simulation['n_steps_cmb'] = 0 
+    #FrontierE_simulation['n_steps_cmb'] = 0 
 
 
     
@@ -156,7 +156,7 @@ matter_power_spectrum='halofit')
     FrontierE_simulation['nperst_steps'] = None
 
     FrontierE_simulation['path_alms'] = FrontierE_simulation['output_path_alms']
-    FrontierE_simulation['nalms_stored'] = 24
+    FrontierE_simulation['nalms_stored'] = 40
     FrontierE_simulation['has_alms'] = True
     
     return FrontierE_simulation
