@@ -24,7 +24,7 @@ size = comm.Get_size()
 
 
 
-def initialize_ray_state_chunked(nside, pix_min, pix_max,  lmax):
+def initialize_ray_state_chunked(nside, pix_min, pix_max,  lmax, output_born):
     dtype = np.float64
 
     npix_chunked = int(pix_max-pix_min)
@@ -43,6 +43,10 @@ def initialize_ray_state_chunked(nside, pix_min, pix_max,  lmax):
     A_11, A_12, A_21, A_22 = identity_jacobian()
 
     if rank==0:
+        if output_born:
+            alm_init = np.zeros(np.zeros(hp.Alm.getsize(lmax), dtype=np.complex128))
+        else:
+            alm_init = np.zeros(0, dtype=np.complex128)
         return RayState(
             A_11_m1, A_12_m1, A_21_m1, A_22_m1,
             A_11, A_12, A_21, A_22,
@@ -50,7 +54,7 @@ def initialize_ray_state_chunked(nside, pix_min, pix_max,  lmax):
             theta.copy(), phi.copy(),
             np.zeros(npix_chunked, dtype=dtype),
             np.zeros(npix_chunked, dtype=dtype),
-            np.zeros(hp.Alm.getsize(lmax), dtype=np.complex128),
+            alm_init,
         )
     else:
         return RayState(

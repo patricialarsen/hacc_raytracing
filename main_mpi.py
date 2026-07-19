@@ -51,7 +51,7 @@ write_checkpoints = False
 write_all_rotated_steps = False
 write_all_unrotated_steps = False
 write_unrotated_step = []
-write_rotated_step = [6, 13,23,36, 44, 63] 
+write_rotated_step = [1,6, 13,23,36, 44, 63] 
 nthreads = 128
 
 output_born=False
@@ -112,7 +112,7 @@ if restart:
 
 else:
     with timed_rank(f"initialize",comm):
-        state = initialize_ray_state_chunked(nside, pix_min, pix_max, lmax)
+        state = initialize_ray_state_chunked(nside, pix_min, pix_max, lmax, output_born)
         theta0 = state.theta.copy()
         phi0 = state.phi.copy()
 
@@ -149,7 +149,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
         del gtheta2, gphi2, U11, U12, U22
 
     w_shell = (chi_cmb - chi_av)/ chi_cmb
-    if rank==0:
+    if rank==0 and output_born:
         state.kappa_born_alm += w_shell * alms_filtered
 
     print('iterating arrays')
@@ -166,6 +166,11 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
             kappa_map, shear1_map, shear2_map, w_map = maps_from_jacobian(state.A_11, state.A_12, state.A_21, state.A_22)    
             write_checkpoint_dir_parallel( state.step_idx, sim, kappa_map, shear1_map, shear2_map, w_map, state.theta, state.phi,  
                                   pix_min, pix_max, comm, state.psi, state.kappa_born_alm)
+        del kappa_map
+        del shear1_map
+        del shear2_map
+        del w_map
+
     
     if write_all_unrotated_steps or (state.step_idx in write_unrotated_step):
         with timed_rank(f"step {state.step_idx} write native ray state",comm):
@@ -187,6 +192,11 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
             else:
                 kappa_born=None
             write_outputs_parallel(state.step_idx, sim, pix_min, pix_max, comm, kappa_map, shear1_map, shear2_map, w_map, kappa_born=kappa_born)
+        del kappa_map
+        del shear1_map
+        del shear2_map
+        del w_map
+
 
     print(f"[timer] step {state.step_idx} total: {time.perf_counter() - step_t0:.2f} s", flush=True)
 
