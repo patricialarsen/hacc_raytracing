@@ -124,7 +124,7 @@ def FrontierE_simulation():
 
     
     FrontierE_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE'
-    FrontierE_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_wiener/'
+    FrontierE_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_wiener_rerun/'
     FrontierE_simulation['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/FrontierE/map_16384_2p5_alms_GO/'
 
 

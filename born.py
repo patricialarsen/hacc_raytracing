@@ -6,19 +6,31 @@ import numpy as np
 import healpy as hp
 
 from utils import timed
-from write_funcs import write_outputs
-from hacc_sims import LJ_simulation
+from hacc_sims import LJ_simulation, FrontierE_simulation
 
 from simulation import get_chi_step, get_input_map_alms
 from synthetics import get_synthetic_alms_CCL
+try:
+    from mpi4py import MPI
+except ImportError as exc:
+    raise RuntimeError(
+        "Optional mpi4py library not installed. "
+        "Install mpi4py or run serial version. "
+        ) from exc
+    
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+size = comm.Get_size()
 
-sim = LJ_simulation()
+
+sim = FrontierE_simulation()
 nside = sim["nside"]
 nthreads = 128
-lmax = 3 * nside - 1
+
+lmax = int(2.5*nside)# * nside - 1
 n_lms = hp.Alm.getsize(lmax, lmax)
 
-write_rotated_step = [6, 13, 23, 36]
+write_rotated_step = [6, 13, 23]
 
 source_chi = {
     s: get_chi_step(s, sim)[2]
@@ -40,7 +52,6 @@ for step_idx in range(n_total):
         if step_idx > sim["nplanes"] - 1:
             chi_av, alms_filtered = get_synthetic_alms_CCL(
                 step_idx,
-                sim["path_maps"],
                 sim,
                 lmax,
                 nthreads,
@@ -52,8 +63,8 @@ for step_idx in range(n_total):
                 lmax,
                 nthreads,
                 filter="wiener",
-                ell_cut=None, #int(2.5 * nside),
-                use_pixel_weights=False,
+                ell_cut=int(2.5*nside), #int(2.5 * nside),
+                use_pixel_weights=False, comm=comm, save_alms=True
             )
 
     chi_lens = chi_av
@@ -63,24 +74,10 @@ for step_idx in range(n_total):
             w_shell = (chi_source - chi_lens) / chi_source
             born_accum[source_step] += w_shell * alms_filtered
 
-    if step_idx in write_rotated_step:
-        with timed(f"step {step_idx} born alm2map/write"):
-            kappa_born = hp.alm2map(
-                born_accum[step_idx],
-                nside=nside,
-                lmax=lmax,
-                mmax=lmax,
-                pixwin=False,
-            )
-
-            write_outputs(
-                step_idx,
-                sim,
-                born_only=True,
-                kappa_born=kappa_born,
-            )
-
     del alms_filtered
+    if step_idx in write_rotated_step:
+        hp.write_alm(sim['output_path_rt']+'born_'+str(step_idx)+'.fits', born_accum[step_idx], overwrite=True)
+
 
     print(
         f"[timer] step {step_idx} total: "

@@ -10,7 +10,6 @@ from astropy.cosmology import FlatLambdaCDM, z_at_value
 from astropy import units as u
 import pyccl as ccl
 from filtering import wiener_filter, window_filter, wiener_filter_withtaper
-import lenspyx
 import math 
 from hacc_sims import LJ_simulation as sim
 from hacc_sims import step2z
@@ -99,7 +98,27 @@ def downgrade_nested_surface_density(map_nest, nside_out):
 
     return map_nest.reshape(npix_out, nchild).mean(axis=1)
 
+def truncate_alm_lmax(alm_in, lmax_out, mmax_out=None):
+    if mmax_out is None:
+        mmax_out = lmax_out
 
+    lmax_in = hp.Alm.getlmax(alm_in.size)
+    mmax_in = lmax_in
+
+    lmax_out = min(lmax_out, lmax_in)
+    mmax_out = min(mmax_out, lmax_out, mmax_in)
+
+    alm_out = np.zeros(hp.Alm.getsize(lmax_out, mmax_out), dtype=alm_in.dtype)
+
+    for m in range(mmax_out + 1):
+        n = lmax_out - m + 1
+
+        i_in = hp.Alm.getidx(lmax_in, m, m)
+        i_out = hp.Alm.getidx(lmax_out, m, m)
+
+        alm_out[i_out:i_out + n] = alm_in[i_in:i_in + n]
+
+    return alm_out
 
 def get_input_alm_chi_z(step_idx, sim, comm=None):
     """ Read input density map and scale to convergence"""
@@ -112,17 +131,18 @@ def get_input_alm_chi_z(step_idx, sim, comm=None):
 
     with timed_rank("Reading alm data", comm):
         alm_read = hp.read_alm(sim['path_alms'] + '/alm_map_'+str(step_idx)+'.fits')
-
+        alm_read = truncate_alm_lmax(alm_read, lmax_out=int(2.0*sim['nside']))
+        
     if sim['name']=="Frontier-E":
-        alm_read  /= sim["mpp"]
+        alm_read  /= sim["mpp"] 
         alm_read[0] = 0.0
-    elif sim['name']=="Frontier-E (hydro)":
-        fb_fact = (1-sim['fb'])**2 + sim['fb']**2
-        alm_read  /= sim["mpp"]
-        alm_read /= fb_fact
-        alm_read[0] = 0.0
+    #elif sim['name']=="Frontier-E (hydro)":
+    #    fb_fact = (1-sim['fb'])**2 + sim['fb']**2
+    #    alm_read  /= sim["mpp"]
+    #    alm_read /= fb_fact
+    #    alm_read[0] = 0.0
 
-    n_per_steradian = float(np.loadtxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt'))
+    n_per_steradian = float(np.loadtxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt'))/sim['mpp']
     #n_per_steradian = sim['nperst'][step_idx]
     if sim['name']=="Frontier-E (hydro)":
         # n_per_steradian = mean()/ mpp / fb_fact

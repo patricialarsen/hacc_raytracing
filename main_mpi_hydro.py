@@ -50,8 +50,8 @@ restart = idx_start==1
 write_checkpoints = False
 write_all_rotated_steps = False
 write_all_unrotated_steps = False
-write_unrotated_step = [6,13, 23, 36, 44, 63]
-write_rotated_step = [ 6, 13, 23, 36, 44, 63] 
+write_unrotated_step = [6,13, 23, 36, 44, 53]
+write_rotated_step = [ 6, 13, 23, 36, 44, 53] 
 nthreads = 128
 
 output_born=False
@@ -67,7 +67,7 @@ nside = sim['nside']
 # geometry definitions 
 #lmax = 3*nside-1
 
-lmax = int(2.5*nside)
+lmax = int(2.0*nside)
 
 npix = hp.nside2npix(nside)
 n_lms = int((lmax+2)*(lmax+1)/2) # size of alm array
@@ -96,7 +96,7 @@ if restart:
         if state.step_idx>sim['nplanes']:
             chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx-1, sim, lmax, nthreads)
         else:
-            chi_av, alms_filtered = get_input_map_alms(state.step_idx-1, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False, save_alms=True, comm=comm)
+            chi_av, alms_filtered = get_input_map_alms(state.step_idx-1, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.0*nside), use_pixel_weights=False, save_alms=True, comm=comm)
     else:
         alms_filtered = np.empty(n_lms, dtype=np.complex128)
         chi_av = np.empty((), dtype=np.float64)
@@ -130,7 +130,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
             if state.step_idx>sim['nplanes']-1:
                 chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx, sim, lmax, nthreads)
             else:
-                chi_av, alms_filtered = get_input_map_alms(state.step_idx, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False, save_alms=True, comm=comm)
+                chi_av, alms_filtered = get_input_map_alms(state.step_idx, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.0*nside), use_pixel_weights=False, save_alms=True, comm=comm)
         else:
             alms_filtered = np.empty(n_lms, dtype=np.complex128)
             chi_av = np.empty((), dtype=np.float64)
