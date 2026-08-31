@@ -142,7 +142,7 @@ def get_input_alm_chi_z(step_idx, sim, comm=None):
     #    alm_read /= fb_fact
     #    alm_read[0] = 0.0
 
-    n_per_steradian = float(np.loadtxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt'))/sim['mpp']
+    n_per_steradian = float(np.loadtxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt'))#/sim['mpp']
     #n_per_steradian = sim['nperst'][step_idx]
     if sim['name']=="Frontier-E (hydro)":
         # n_per_steradian = mean()/ mpp / fb_fact
@@ -327,4 +327,24 @@ def create_gauss_map_chi_z(read_path, run_fresh=False, nside_out = 8192):
         hp.write_map(read_path, map_hz, overwrite=False)
         
     return map_hz
+
+
+def plane_redshift(step_idx, sim):
+    if step_idx > sim["nplanes"] - 1:
+        raise ValueError("galaxy interpolation currently expects simulation source planes")
+    step = sim["step_list_max"][step_idx] - 1
+    return step2z(step, sim["zfin"], sim["zinit"], sim["nsteps"])
+
+
+def chi_from_redshift(z, sim):
+    z = np.asarray(z, dtype=np.float64)
+    return ccl.background.comoving_radial_distance(
+        sim["cosmo_ccl"],
+        a=1.0 / (1.0 + z),
+    ) * sim["h"]
+    
+    
+def plane_chi(step_idx, sim):
+    return chi_from_redshift(plane_redshift(step_idx, sim), sim)
+    
 

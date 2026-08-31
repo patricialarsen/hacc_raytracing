@@ -166,3 +166,43 @@ def restart_from_checkpoint(sim,  add_psi=True):
         kappa_born_alm,
         chi_km1, chi_k,
     )
+
+def get_state_from_outputs(sim,  step_idx):
+    """
+    Get the information needed to set a reduced state given the native state outputs
+    """
+
+    path_out = sim['output_path_rt']
+    npix = hp.nside2npix(sim["nside"])
+
+    if step_idx>sim['nplanes']-1:
+        suffix = "tail_plane_" + str(step_idx - sim['nplanes']) + '_source_basis.hdf5'
+    else:
+        step_high = sim['step_list_max'][step_idx]
+        step_low = sim['step_list_min'][step_idx]
+        suffix = str(step_high)+'_'+str(step_low)+'_source_basis.hdf5'
+
+    f=h5py.File(path_out+ '/' + suffix,'r')
+
+    A_11 = f['dA_11_'][:] + 1.0
+    A_12 = f['A_12_'][:]
+    A_21 = f['A_21_'][:]
+    A_22 = f['dA_22_'][:] + 1.0
+    theta = f['theta'][:]
+    phi = f['phi'][:]
+    psi = f['psi'][:]
+
+    return  (
+        A_11, A_12, A_21, A_22, theta, phi,
+        psi, step_idx
+    )
+
+
+def source_basis_suffix(step_idx, sim):
+    if step_idx > sim["nplanes"] - 1: 
+        return "tail_plane_" + str(step_idx - sim["nplanes"]) + "_source_basis.fits"
+    
+    step_high = sim["step_list_max"][step_idx]
+    step_low = sim["step_list_min"][step_idx]
+    return str(step_high) + "_" + str(step_low) + "_source_basis.fits"
+

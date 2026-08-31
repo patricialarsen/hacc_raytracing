@@ -9,6 +9,14 @@ def wrap_angles(theta, phi):
     phi = np.where(pole_mask, 0.0, phi)
     return theta, phi
 
+def wrap_angles_ra_dec(ra, dec):
+    """ 
+    Wrap RA and declination values to their expected bounds
+    """ 
+    dec = np.clip(dec, -90.0 + 1e-8, 90.0 - 1e-8)
+    ra = np.mod(ra, 360.0)
+    return ra, dec
+
 
 def update_beta(theta_m1, phi_m1, theta, phi, alpha_theta, alpha_phi, chi_km1, chi_k, chi_kp1):
     chi_km1_kp1 = chi_kp1 - chi_km1

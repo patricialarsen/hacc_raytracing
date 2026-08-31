@@ -5,7 +5,7 @@ import healpy as hp
 from angle_updates import  update_beta_xyz_ray_numba
 from transport_xyz import update_matrix_transport_xyz_basis_numba, transport_A_rows_xyz_basis_numba
 from contextlib import contextmanager
-from write_funcs import restart_from_checkpoint
+from write_funcs import restart_from_checkpoint, get_state_from_outputs
 import time
 
 
@@ -50,6 +50,23 @@ class RayState:
     chi_km1: float = 0.0
     chi_k: float = 0.0
     step_idx: int = 0
+
+@dataclass
+class SinglePlaneState:
+    A_11: np.ndarray
+    A_12: np.ndarray
+    A_21: np.ndarray
+    A_22: np.ndarray
+    theta: np.ndarray
+    phi: np.ndarray
+    psi: np.ndarray
+    chi_k: float = 0.0
+    step_idx: int = 0
+
+
+def initialize_singleplane_state_from_outputs(sim, step_idx):
+    A_11, A_12, A_21, A_22, theta, phi, psi, step_idx = get_state_from_outputs(sim,  step_idx)
+    return SinglePlaneState(A_11, A_12, A_21, A_22, theta, phi, psi, 0.0, step_idx)
 
 
 def initialize_ray_state(nside, lmax):
@@ -150,6 +167,21 @@ def rotate_state_to_observer_basis(state, theta0, phi0):
     )
     return maps_from_jacobian(*A_obs)
 
+
+def rotate_state_to_observer_basis_inplace(state, theta0, phi0):
+    (state.A_11, state.A_12, state.A_21, state.A_22)  = transport_A_rows_xyz_basis_numba(
+        state.A_11,
+        state.A_12,
+        state.A_21,
+        state.A_22,
+        state.theta,
+        state.phi,
+        theta0,
+        phi0,
+        state.psi,
+    )
+
+
 def advance_chi_values(state, chi_kp1):
     state.chi_km1 = state.chi_k
     state.chi_k = chi_kp1
@@ -166,4 +198,15 @@ def initialize_ray_state_restart(sim,  add_psi=True):
         theta_m1, phi_m1, psi, psi_m1,
         kappa_born_alm, chi_km1, chi_k, step_idx)
 
+
+def initialize_ray_state_from_outputs(sim, step_idx, step_idx2):
+    (A_11_m1, A_12_m1, A_21_m1, A_22_m1,
+     A_11, A_12, A_21, A_22, theta, phi,
+     theta_m1, phi_m1, psi, psi_m1, step_idx, 
+     step_idx2,) = get_state_from_outputs(sim,  step_idx, step_idx2)
+    return RayState(
+        A_11_m1, A_12_m1, A_21_m1, A_22_m1,
+        A_11, A_12, A_21, A_22, theta, phi,
+        theta_m1, phi_m1, psi, psi_m1,
+        np.empty(), 0.0, 0.0, step_idx)
 
