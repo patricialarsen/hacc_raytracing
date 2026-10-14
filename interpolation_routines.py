@@ -212,10 +212,10 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside):
     """
     Get single plane lensing for a set of galaxies based on RA, dec position
     """
-    ngals = hp.ang2vec(ra_in, dec_in, lonlat=True) # first galaxy only for now
+    ngals = hp.ang2vec(ra_in, dec_in, lonlat=True).T # first galaxy only for now
     pix_list = get_candidates(nside, ngals, levels=2)
 
-    x_pix, y_pix, z_pix = hp.ang2vec(state.theta[pix_list], state.phi[pix_list])
+    x_pix, y_pix, z_pix = hp.ang2vec(state.theta[pix_list], state.phi[pix_list]).T
     x_obs_pix, y_obs_pix, z_obs_pix = hp.pix2vec(nside, pix_list)
     idx_dist = get_distance(ngals, nside, x_pix, y_pix, z_pix, pix_list)
 
@@ -264,7 +264,7 @@ def redshift_interpolation(chi_gal, chi_min, chi_max, plane_vals, plane_vals2):
     x_val = linear_interp(chi_gal, chi_min, chi_max, plane_vals['x_obs'], plane_vals2['x_obs'])
     y_val = linear_interp(chi_gal, chi_min, chi_max, plane_vals['y_obs'], plane_vals2['y_obs'])
     z_val = linear_interp(chi_gal, chi_min, chi_max, plane_vals['z_obs'], plane_vals2['z_obs'])
-    ra_val, dec_val = hp.vec2ang(np.array([x_val,y_val,z_val]),lonlat=True)
+    ra_val, dec_val = hp.vec2ang(np.column_stack((x_val,y_val,z_val)),lonlat=True)
     kappa_val = linear_interp(chi_gal, chi_min, chi_max, plane_vals['kappa_obs'], plane_vals2['kappa_obs'])
     shear1_val = linear_interp(chi_gal, chi_min, chi_max, plane_vals['shear1_obs'], plane_vals2['shear1_obs'])
     shear2_val = linear_interp(chi_gal, chi_min, chi_max, plane_vals['shear2_obs'], plane_vals2['shear2_obs'])
@@ -280,6 +280,6 @@ def get_plane_vals(chi_gal, chi_min, chi_max, plane_vals):
     x_val = plane_vals['x_obs']
     y_val = plane_vals['y_obs']
     z_val = plane_vals['z_obs']
-    ra_val, dec_val = hp.vec2ang(np.array([x_val,y_val,z_val]),lonlat=True)
+    ra_val, dec_val = hp.vec2ang(np.column_stack((x_val,y_val,z_val)),lonlat=True)
     return ra_val, dec_val, plane_vals['kappa_obs'], plane_vals['shear1_obs'], plane_vals['shear2_obs'], plane_vals['w_obs']
 
