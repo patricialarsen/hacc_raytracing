@@ -170,11 +170,10 @@ def restart_from_checkpoint(sim,  add_psi=True):
 
 def get_state_from_outputs(sim,  step_idx):
     """
-    Get the information needed to set a reduced state given the native state outputs
+    Read native state from combined HDF5 or legacy component FITS outputs.
     """
 
     path_out = sim['output_path_rt']
-    npix = hp.nside2npix(sim["nside"])
 
     if step_idx>sim['nplanes']-1:
         suffix = "tail_plane_" + str(step_idx - sim['nplanes']) + '_source_basis.hdf5'
@@ -183,15 +182,25 @@ def get_state_from_outputs(sim,  step_idx):
         step_low = sim['step_list_min'][step_idx]
         suffix = str(step_high)+'_'+str(step_low)+'_source_basis.hdf5'
 
-    f=h5py.File(path_out+ '/' + suffix,'r')
-
-    A_11 = f['dA_11_'][:] + 1.0
-    A_12 = f['A_12_'][:]
-    A_21 = f['A_21_'][:]
-    A_22 = f['dA_22_'][:] + 1.0
-    theta = f['theta'][:]
-    phi = f['phi'][:]
-    psi = f['psi'][:]
+    hdf5_path = os.path.join(path_out, suffix)
+    if os.path.exists(hdf5_path):
+        with h5py.File(hdf5_path, 'r') as f:
+            A_11 = f['dA_11_'][:] + 1.0
+            A_12 = f['A_12_'][:]
+            A_21 = f['A_21_'][:]
+            A_22 = f['dA_22_'][:] + 1.0
+            theta = f['theta'][:]
+            phi = f['phi'][:]
+            psi = f['psi'][:]
+    else:
+        fits_suffix = source_basis_suffix(step_idx, sim)
+        A_11 = hp.read_map(os.path.join(path_out, 'dA_11_' + fits_suffix), dtype=np.float64) + 1.0
+        A_12 = hp.read_map(os.path.join(path_out, 'A_12_' + fits_suffix), dtype=np.float64)
+        A_21 = hp.read_map(os.path.join(path_out, 'A_21_' + fits_suffix), dtype=np.float64)
+        A_22 = hp.read_map(os.path.join(path_out, 'dA_22_' + fits_suffix), dtype=np.float64) + 1.0
+        theta = hp.read_map(os.path.join(path_out, 'theta_' + fits_suffix), dtype=np.float64)
+        phi = hp.read_map(os.path.join(path_out, 'phi_' + fits_suffix), dtype=np.float64)
+        psi = hp.read_map(os.path.join(path_out, 'psi_' + fits_suffix), dtype=np.float64)
 
     return  (
         A_11, A_12, A_21, A_22, theta, phi,
