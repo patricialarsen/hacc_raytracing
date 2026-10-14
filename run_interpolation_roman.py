@@ -2,6 +2,7 @@
 
 import os
 import sys
+import time
 os.environ["OMP_NUM_THREADS"] = "128"
 import healpy as hp
 import numpy as np
@@ -14,7 +15,7 @@ from diffsky_routines import add_lensing, galaxy_steps_overlapping_chi_interval,
 
 nthreads = 128
 
-print('Setting up')
+print('Setting up', flush=True)
 warmup_numba_kernels_transport()
 
 
@@ -78,6 +79,8 @@ def main(argv=None):
 
 
     while(step_idx<sim['nplanes']):
+        plane_start = time.perf_counter()
+        print(f"[plane {step_idx + 1}/{sim['nplanes']}] Loading and rotating source states {step_idx}, {step_idx2}", flush=True)
         # initialize state and rotate values to observer basis 
         state = initialize_singleplane_state_from_outputs(sim, step_idx)
         rotate_state_to_observer_basis_inplace(state, theta0, phi0)
@@ -86,6 +89,7 @@ def main(argv=None):
         rotate_state_to_observer_basis_inplace(state2, theta0, phi0)
 
         gal_steps, chi_min, chi_max = galaxy_steps_overlapping_chi_interval(step_idx, step_idx2, step_list_gals, sim)
+        print(f"[plane {step_idx + 1}/{sim['nplanes']}] States ready; chi=[{chi_min:.6g}, {chi_max:.6g}) Mpc/h; galaxy steps={list(gal_steps)}", flush=True)
 
         candidate_files = []
         if len(gal_steps)>0:
@@ -101,6 +105,7 @@ def main(argv=None):
         # adding the set of galaxies which are just beyond one bound 
         if step_idx==0:
             gal_steps, chi_max = galaxy_steps_overlapping_chi_interval_z0(step_idx, step_list_gals, sim)
+            print(f"[plane 1/{sim['nplanes']}] Processing galaxies below the first source plane: chi=[0, {chi_max:.6g}) Mpc/h", flush=True)
             if len(gal_steps)>0:
                 candidate_files = []
                 for step in gal_steps:
@@ -113,8 +118,11 @@ def main(argv=None):
 
 
 
+        print(f"[plane {step_idx + 1}/{sim['nplanes']}] Complete in {time.perf_counter() - plane_start:.1f} s", flush=True)
         step_idx +=1
         step_idx2 +=1 
+
+    print("Interpolation complete: all configured plane intervals processed.", flush=True)
 
 
 if __name__ == "__main__":

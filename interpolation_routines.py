@@ -1,5 +1,8 @@
 import numpy as np
 import healpy as hp
+import json
+import os
+import tempfile
 from utils import maps_from_jacobian
 
 
@@ -164,6 +167,9 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
 
     candidates = np.stack([candidate_a, candidate_b, candidate_c, candidate_d,], axis=0)
     has_triangle = np.any(candidates, axis=0)
+    fallback_count = int(np.count_nonzero(~has_triangle))
+    if fallback_count:
+        print(f"[triangles] Trying additional candidate rays for {fallback_count}/{has_triangle.size} galaxies", flush=True)
     triangle_choice = np.argmax(candidates, axis=0)
     idx_options = np.array([idx_a, idx_b, idx_c, idx_d])
     triangle_indices = idx_options[triangle_choice].copy()
@@ -225,8 +231,12 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
             lines.append(f"  weights for triangles 012, 013, 023, 123: {weights[:, :, sample_idx].tolist()}")
         if failed.size > 5:
             lines.append(f"Only the first 5 failures are shown; {failed.size - 5} more omitted.")
-        raise ValueError("\n".join(lines))
+        error = ValueError("\n".join(lines))
+        error.failed_indices = failed
+        raise error
         
+    if fallback_count:
+        print(f"[triangles] Recovered all {fallback_count} galaxies using additional candidate rays", flush=True)
     return w0, w1, w2, triangle_indices
 
 
@@ -254,12 +264,117 @@ def get_obs_lensing(w0, w1, w2, state, pix_list):
 
     
 
-def get_lensing_interpolation(state, ra_in, dec_in, nside):
+def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
+                                       idx_dist, failed, levels,
+                                       catalog_filename=None, catalog_mask=None):
+    """Save full candidate geometry for up to five failures, without changing data."""
+    from scipy.spatial import ConvexHull, QhullError
+
+    arcsec = 180.0 / np.pi * 3600.0
+    report = {
+        'catalog_filename': catalog_filename,
+        'plane_index': int(state.step_idx), 'nside': int(nside),
+        'neighbor_levels': int(levels), 'failed_count': int(len(failed)),
+        'subset_size': int(len(ra_in)), 'failed_subset_indices': failed.tolist(),
+        'offset_units': 'arcsec equivalent of projected unit-vector tangent components',
+        'basis': 'get_tangent_basis at the input galaxy source direction',
+        'samples': [],
+    }
+    sample = failed[:5]
+    rows = np.flatnonzero(catalog_mask)[sample] if catalog_mask is not None else None
+    for sample_idx, idx in enumerate(sample):
+        pixels = pix_list[idx_dist[:, idx], idx]
+        pixels = pixels[pixels >= 0]
+        galaxy = hp.ang2vec(float(ra_in[idx]), float(dec_in[idx]), lonlat=True)
+        observer = np.array(hp.pix2vec(nside, pixels))
+        source = hp.ang2vec(state.theta[pixels], state.phi[pixels]).T
+        basis = get_tangent_basis(galaxy[:, None])
+        e1 = np.array(basis[:3]).reshape(3)
+        e2 = np.array(basis[3:]).reshape(3)
+        source_offsets = np.column_stack((e1 @ source, e2 @ source))
+        observer_offsets = np.column_stack((e1 @ observer, e2 @ observer))
+        dots = np.sum(observer * source, axis=0)
+        crosses = np.linalg.norm(np.cross(observer.T, source.T), axis=1)
+        deflections = np.arctan2(crosses, dots) * arcsec
+        radius = np.arctan2(np.linalg.norm(np.cross(observer.T, galaxy), axis=1), galaxy @ observer) * arcsec
+        neighbors = hp.get_all_neighbours(nside, pixels)
+        boundary = np.any((neighbors >= 0) & ~np.isin(neighbors, pixels), axis=0)
+        if levels > 1:
+            inner = get_candidates(nside, galaxy[:, None], levels=levels - 1)[:, 0]
+            outer_layer = ~np.isin(pixels, inner[inner >= 0])
+        else:
+            outer_layer = pixels != hp.vec2pix(nside, *galaxy)
+        finite = np.all(np.isfinite(source_offsets), axis=1)
+        hull_info = {'status': 'unavailable'}
+        try:
+            hull = ConvexHull(source_offsets[finite])
+            edge_offsets = hull.equations[:, -1]
+            max_offset = float(np.max(edge_offsets))
+            hull_info = {
+                'status': 'ok',
+                'contains_galaxy': bool(max_offset <= 0.0),
+                'max_signed_edge_distance_arcsec': max_offset * arcsec,
+                'sign_convention': 'positive means outside; negative means inside',
+                'vertex_pixel_ids': pixels[finite][hull.vertices].tolist(),
+            }
+        except (QhullError, ValueError) as exc:
+            hull_info['reason'] = str(exc).splitlines()[0]
+        obs_ra, obs_dec = hp.vec2ang(observer.T, lonlat=True)
+        src_ra, src_dec = hp.vec2ang(source.T, lonlat=True)
+        entry = {
+            'subset_index': int(idx),
+            'catalog_row': int(rows[sample_idx]) if rows is not None else None,
+            'galaxy_ra_deg': float(ra_in[idx]), 'galaxy_dec_deg': float(dec_in[idx]),
+            'valid_candidate_count': int(len(pixels)), 'source_convex_hull': hull_info,
+            'candidates': [],
+        }
+        for rank, pixel in enumerate(pixels):
+            entry['candidates'].append({
+                'source_distance_rank': rank, 'pixel_id': int(pixel),
+                'observer_ra_deg': float(obs_ra[rank]), 'observer_dec_deg': float(obs_dec[rank]),
+                'source_ra_deg': float(src_ra[rank]), 'source_dec_deg': float(src_dec[rank]),
+                'saved_theta_rad': float(state.theta[pixel]), 'saved_phi_rad': float(state.phi[pixel]),
+                'observer_offsets_arcsec': (observer_offsets[rank] * arcsec).tolist(),
+                'source_offsets_arcsec': (source_offsets[rank] * arcsec).tolist(),
+                'observer_radius_arcsec': float(radius[rank]),
+                'ray_deflection_arcsec': float(deflections[rank]),
+                'on_candidate_boundary': bool(boundary[rank]),
+                'in_outer_neighbor_layer': bool(outer_layer[rank]),
+                'finite_source_coordinates': bool(finite[rank]),
+            })
+        report['samples'].append(entry)
+        print(f"[diagnostics] Galaxy subset index {idx}: hull status={hull_info['status']}, "
+              f"contains galaxy={hull_info.get('contains_galaxy')}, "
+              f"max signed edge distance={hull_info.get('max_signed_edge_distance_arcsec')} arcsec; "
+              f"nearest-four boundary flags={boundary[:4].tolist()}; "
+              f"ray deflection range={np.nanmin(deflections):.3g}..{np.nanmax(deflections):.3g} arcsec", flush=True)
+
+    # Represent nonfinite diagnostic values as JSON null instead of invalid JSON.
+    def json_safe(value):
+        if isinstance(value, dict):
+            return {key: json_safe(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [json_safe(item) for item in value]
+        if isinstance(value, float) and not np.isfinite(value):
+            return None
+        return value
+
+    with tempfile.NamedTemporaryFile(mode='w', prefix=f'triangle_failure_plane_{state.step_idx}_',
+                                     suffix='.json', dir=os.getcwd(), delete=False) as output:
+        json.dump(json_safe(report), output, indent=2, allow_nan=False)
+        path = output.name
+    print(f"[diagnostics] Catalog={catalog_filename}; plane={state.step_idx}; details saved to {path}", flush=True)
+    return path
+
+
+def get_lensing_interpolation(state, ra_in, dec_in, nside,
+                              catalog_filename=None, catalog_mask=None):
     """
     Get single plane lensing for a set of galaxies based on RA, dec position
     """
     ngals = hp.ang2vec(ra_in, dec_in, lonlat=True).T # first galaxy only for now
-    pix_list = get_candidates(nside, ngals, levels=3)
+    levels = 3
+    pix_list = get_candidates(nside, ngals, levels=levels)
 
     x_pix, y_pix, z_pix = hp.ang2vec(state.theta[pix_list], state.phi[pix_list]).T
     x_obs_pix, y_obs_pix, z_obs_pix = hp.pix2vec(nside, pix_list)
@@ -278,7 +393,18 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside):
     e1_pix[invalid] = np.nan
     e2_pix[invalid] = np.nan
 
-    w0, w1, w2, idx_list = get_weights(e1_pix, e2_pix, ra_in=ra_in, dec_in=dec_in)
+    try:
+        w0, w1, w2, idx_list = get_weights(e1_pix, e2_pix, ra_in=ra_in, dec_in=dec_in)
+    except ValueError as error:
+        if hasattr(error, 'failed_indices'):
+            try:
+                write_triangle_failure_diagnostics(
+                    state, ra_in, dec_in, nside, pix_list, idx_dist,
+                    error.failed_indices, levels, catalog_filename, catalog_mask,
+                )
+            except Exception as diagnostic_error:
+                print(f"[diagnostics] Could not save diagnostics: {diagnostic_error}", flush=True)
+        raise
     x_obs_pix = np.take_along_axis(x_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]]  
     y_obs_pix = np.take_along_axis(y_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]] 
     z_obs_pix = np.take_along_axis(z_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]] 

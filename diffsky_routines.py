@@ -1,5 +1,6 @@
 import numpy as np
 import h5py
+import time
 from hacc_sims import step2z
 from simulation import get_chi_step, chi_from_redshift
 from angle_updates import wrap_angles_ra_dec
@@ -164,7 +165,9 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
     Add lensing to galaxy files  
     """
 
-    for filename in filenames:
+    for file_idx, filename in enumerate(filenames, start=1):
+        file_start = time.perf_counter()
+        print(f"[catalog {file_idx}/{len(filenames)}] Opening {filename}", flush=True)
         with h5py.File(filename, "r+") as gal_file:
             data = gal_file["data"]
             ra_in = data["ra_nfw"][:]
@@ -176,13 +179,20 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
             chi_gal = chi_from_redshift(z_in, sim)
             mask = (chi_gal < chi_max) * (chi_gal >= chi_min)
 
-            if np.sum(mask)==0:
+            selected = int(np.count_nonzero(mask))
+            print(f"[catalog] Selected {selected}/{ngals} galaxies for chi=[{chi_min:.6g}, {chi_max:.6g}) Mpc/h", flush=True)
+            if selected==0:
+                print("[catalog] Skipping: no galaxies in this interval.", flush=True)
                 continue
 
             # upper and lower planes then interpolation
-            plane_vals = get_lensing_interpolation(state, ra_in[mask], dec_in[mask], nside)
+            print(f"[catalog] Spatial interpolation at source state {state.step_idx}", flush=True)
+            plane_vals = get_lensing_interpolation(state, ra_in[mask], dec_in[mask], nside,
+                                                  catalog_filename=filename, catalog_mask=mask)
             if not first_plane:
-                plane_vals2 = get_lensing_interpolation(state2, ra_in[mask], dec_in[mask], nside)
+                print(f"[catalog] Spatial interpolation at source state {state2.step_idx}", flush=True)
+                plane_vals2 = get_lensing_interpolation(state2, ra_in[mask], dec_in[mask], nside,
+                                                       catalog_filename=filename, catalog_mask=mask)
                 ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = redshift_interpolation(chi_gal[mask], chi_min, chi_max, plane_vals, plane_vals2)
             else: 
                 ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = get_plane_vals(chi_gal[mask], chi_min, chi_max, plane_vals)
@@ -191,10 +201,12 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
 
             # updating the file data
 
+            print("[catalog] Preparing unlensed backups and writing lensing/photometry updates", flush=True)
             duplicate_unlensed_data(gal_file, mag_cols, flux_cols)
             initialize_lensing_data(gal_file, ngals)
 
             update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val, mag_cols, flux_cols)
+        print(f"[catalog {file_idx}/{len(filenames)}] Updated {selected} galaxies; file closed; elapsed {time.perf_counter() - file_start:.1f} s", flush=True)
 
     return
 
