@@ -135,7 +135,7 @@ def get_w(e1_pix, e2_pix, idx1, idx2, idx3, det):
     return w0, w1, w2
     
     
-def get_weights(e1_pix, e2_pix, tol = 1.e-20):
+def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
     """
     Get barycentric triangle weights and triangle choice. 
     We pick the closest 4 points and test whether any combination 
@@ -166,10 +166,32 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20):
     candidates = np.stack([candidate_a, candidate_b, candidate_c, candidate_d,], axis=0)
     has_triangle = np.any(candidates, axis=0)
     if not has_triangle.all():
-        print(candidates)
-        print(w0_a, w1_a, w2_a)
-        print(det_a)
-        raise ValueError("No valid triangle encompassing the galaxy")
+        failed = np.flatnonzero(~has_triangle)
+        sample = failed[:5]
+        weights = np.stack([
+            [w0_a[sample], w1_a[sample], w2_a[sample]],
+            [w0_b[sample], w1_b[sample], w2_b[sample]],
+            [w0_c[sample], w1_c[sample], w2_c[sample]],
+            [w0_d[sample], w1_d[sample], w2_d[sample]],
+        ], axis=0)
+        determinants = np.stack([d[sample] for d in [det_a, det_b, det_c, det_d]], axis=0)
+        lines = [
+            f"No valid triangle encompassing the galaxy: {failed.size}/{has_triangle.size} galaxies failed.",
+            f"Testing four triangles from the four nearest rays; tol={tol:g}.",
+            "Indices refer to the galaxy subset passed to spatial interpolation.",
+        ]
+        for sample_idx, idx in enumerate(sample):
+            position = ""
+            if ra_in is not None and dec_in is not None:
+                position = f", RA={ra_in[idx]:.10g} deg, Dec={dec_in[idx]:.10g} deg"
+            offsets = np.column_stack((e1_pix[:4, idx], e2_pix[:4, idx]))
+            lines.append(f"Galaxy index {idx}{position}")
+            lines.append(f"  nearest-ray tangent offsets (dimensionless): {offsets.tolist()}")
+            lines.append(f"  determinants: {determinants[:, sample_idx].tolist()}")
+            lines.append(f"  weights for triangles 012, 013, 023, 123: {weights[:, :, sample_idx].tolist()}")
+        if failed.size > 5:
+            lines.append(f"Only the first 5 failures are shown; {failed.size - 5} more omitted.")
+        raise ValueError("\n".join(lines))
         
     triangle_choice = np.argmax(candidates, axis=0)
     w0_all = np.stack([w0_a, w0_b, w0_c, w0_d], axis=0)
@@ -233,7 +255,7 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside):
         (1, 2, 3),
     ])
 
-    w0, w1, w2, triangle_choice  = get_weights(e1_pix, e2_pix)
+    w0, w1, w2, triangle_choice  = get_weights(e1_pix, e2_pix, ra_in=ra_in, dec_in=dec_in)
     idx_list = idx_options[triangle_choice]
     x_obs_pix = np.take_along_axis(x_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]]  
     y_obs_pix = np.take_along_axis(y_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]] 
