@@ -155,7 +155,7 @@ def update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shea
     for mag in mag_cols:
         gal_file['data'][mag][mask] = gal_file['data']['unlensed_magnitudes'][mag][mask] - 2.5*np.log10(np.abs(mag_vals[:]))
     for flux in flux_cols:
-        gal_file['data'][flux][mask] = gal_file['data']['unlensed_fluxes'][flux][mask] * mag_vals
+        gal_file['data'][flux][mask] = gal_file['data']['unlensed_fluxes'][flux][mask] * np.abs(mag_vals)
 
     return
 
