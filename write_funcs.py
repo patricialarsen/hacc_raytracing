@@ -2,6 +2,7 @@ import os
 import shutil
 import numpy as np
 import healpy as hp
+import h5py
 from simulation import get_chi_step
 
 

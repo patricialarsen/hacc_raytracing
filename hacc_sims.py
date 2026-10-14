@@ -48,10 +48,8 @@ def LJ_simulation():
     LJ_simulation['nside'] = 8192 # note that reducing nside will cause a downgrade in the map, and will likely induce aliasing. 
     LJ_simulation['n_steps_cmb'] = 10 
     LJ_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/'
-    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_mpitest/'
+    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_2p5_wiener_seamfix_alloutputs/'
     LJ_simulation['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/alms/'
-
-#    LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_nocut_wiener_seamfix_alloutputs/'
 
 
     LJ_simulation['cosmo'] = FlatLambdaCDM(H0 = 67.66, Om0 = 0.30964, Ob0 = 0.04897468161869667, Tcmb0 = 0, Neff = 0) 
@@ -60,10 +58,8 @@ matter_power_spectrum='halofit')
 
 
     # derived parameters
-    #LJ_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
+    LJ_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
 
-    LJ_simulation['nplanes'] =  len(FrontierE_simulation['step_list_max'])
-    #LJ_simulation['n_steps_cmb'] = 10 
 
 
     
