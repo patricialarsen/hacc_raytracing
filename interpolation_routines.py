@@ -137,9 +137,8 @@ def get_w(e1_pix, e2_pix, idx1, idx2, idx3, det):
     
 def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
     """
-    Get barycentric triangle weights and triangle choice. 
-    We pick the closest 4 points and test whether any combination 
-    of these will form a triangle containing the point. 
+    Return barycentric weights and three sorted-candidate indices per galaxy.
+    Try the nearest four rays first, then additional triples only for failures.
     """
 
     # excluding each point 
@@ -165,6 +164,41 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
 
     candidates = np.stack([candidate_a, candidate_b, candidate_c, candidate_d,], axis=0)
     has_triangle = np.any(candidates, axis=0)
+    triangle_choice = np.argmax(candidates, axis=0)
+    idx_options = np.array([idx_a, idx_b, idx_c, idx_d])
+    triangle_indices = idx_options[triangle_choice].copy()
+    gal_idx = np.arange(candidates.shape[1])
+    w0 = np.stack([w0_a, w0_b, w0_c, w0_d], axis=0)[triangle_choice, gal_idx]
+    w1 = np.stack([w1_a, w1_b, w1_c, w1_d], axis=0)[triangle_choice, gal_idx]
+    w2 = np.stack([w2_a, w2_b, w2_c, w2_d], axis=0)[triangle_choice, gal_idx]
+
+    # Introduce farther rays in distance order, without changing successful results.
+    for farthest in range(4, e1_pix.shape[0]):
+        if has_triangle.all():
+            break
+        for first in range(farthest - 1):
+            if has_triangle.all():
+                break
+            for second in range(first + 1, farthest):
+                unresolved = np.flatnonzero(~has_triangle)
+                if unresolved.size == 0:
+                    break
+                x = e1_pix[:, unresolved]
+                y = e2_pix[:, unresolved]
+                triple = (first, second, farthest)
+                det = get_det(x, y, *triple)
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    a, b, c = get_w(x, y, *triple, det)
+                valid = (
+                    np.isfinite(a) & np.isfinite(b) & np.isfinite(c)
+                    & (a > -tol) & (b > -tol) & (c > -tol)
+                    & (np.abs(det) > tol)
+                )
+                resolved = unresolved[valid]
+                w0[resolved], w1[resolved], w2[resolved] = a[valid], b[valid], c[valid]
+                triangle_indices[resolved] = triple
+                has_triangle[resolved] = True
+
     if not has_triangle.all():
         failed = np.flatnonzero(~has_triangle)
         sample = failed[:5]
@@ -177,7 +211,7 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
         determinants = np.stack([d[sample] for d in [det_a, det_b, det_c, det_d]], axis=0)
         lines = [
             f"No valid triangle encompassing the galaxy: {failed.size}/{has_triangle.size} galaxies failed.",
-            f"Testing four triangles from the four nearest rays; tol={tol:g}.",
+            f"No enclosing triangle after testing all triples among {e1_pix.shape[0]} candidate slots; tol={tol:g}.",
             "Indices refer to the galaxy subset passed to spatial interpolation.",
         ]
         for sample_idx, idx in enumerate(sample):
@@ -193,17 +227,7 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None):
             lines.append(f"Only the first 5 failures are shown; {failed.size - 5} more omitted.")
         raise ValueError("\n".join(lines))
         
-    triangle_choice = np.argmax(candidates, axis=0)
-    w0_all = np.stack([w0_a, w0_b, w0_c, w0_d], axis=0)
-    w1_all = np.stack([w1_a, w1_b, w1_c, w1_d], axis=0)
-    w2_all = np.stack([w2_a, w2_b, w2_c, w2_d], axis=0)
-    gal_idx = np.arange(candidates.shape[1])
-
-    w0 = w0_all[triangle_choice, gal_idx]
-    w1 = w1_all[triangle_choice, gal_idx]
-    w2 = w2_all[triangle_choice, gal_idx]
-    
-    return w0, w1, w2, triangle_choice
+    return w0, w1, w2, triangle_indices
 
 
 def get_obs_position(w0, w1, w2, x_pix, y_pix, z_pix):
@@ -235,7 +259,7 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside):
     Get single plane lensing for a set of galaxies based on RA, dec position
     """
     ngals = hp.ang2vec(ra_in, dec_in, lonlat=True).T # first galaxy only for now
-    pix_list = get_candidates(nside, ngals, levels=2)
+    pix_list = get_candidates(nside, ngals, levels=3)
 
     x_pix, y_pix, z_pix = hp.ang2vec(state.theta[pix_list], state.phi[pix_list]).T
     x_obs_pix, y_obs_pix, z_obs_pix = hp.pix2vec(nside, pix_list)
@@ -248,15 +272,13 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside):
     e1_pix = np.take_along_axis(e1_pix, idx_dist, axis=0)  
     e2_pix = np.take_along_axis(e2_pix, idx_dist, axis=0)
 
-    idx_options = np.array([
-        (0, 1, 2),
-        (0, 1, 3),
-        (0, 2, 3),
-        (1, 2, 3),
-    ])
+    # Missing HEALPix neighbors use -1; never allow their placeholder values
+    # to become vertices in the wider triangle search.
+    invalid = np.take_along_axis(pix_list < 0, idx_dist, axis=0)
+    e1_pix[invalid] = np.nan
+    e2_pix[invalid] = np.nan
 
-    w0, w1, w2, triangle_choice  = get_weights(e1_pix, e2_pix, ra_in=ra_in, dec_in=dec_in)
-    idx_list = idx_options[triangle_choice]
+    w0, w1, w2, idx_list = get_weights(e1_pix, e2_pix, ra_in=ra_in, dec_in=dec_in)
     x_obs_pix = np.take_along_axis(x_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]]  
     y_obs_pix = np.take_along_axis(y_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]] 
     z_obs_pix = np.take_along_axis(z_obs_pix, idx_dist, axis=0)[idx_list.T, np.arange(x_obs_pix.shape[1])[None, :]] 
