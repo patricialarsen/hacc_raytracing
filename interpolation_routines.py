@@ -266,7 +266,8 @@ def get_obs_lensing(w0, w1, w2, state, pix_list):
 
 def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
                                        idx_dist, failed, levels,
-                                       catalog_filename=None, catalog_mask=None):
+                                       catalog_filename=None, catalog_mask=None,
+                                       distance_context=None):
     """Save full candidate geometry for up to five failures, without changing data."""
     from scipy.spatial import ConvexHull, QhullError
 
@@ -280,6 +281,14 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
         'basis': 'get_tangent_basis at the input galaxy source direction',
         'samples': [],
     }
+    if distance_context is not None:
+        report['distance_interval'] = {
+            'chi_min_mpc_h': float(distance_context['chi_min']),
+            'chi_max_mpc_h': float(distance_context['chi_max']),
+            'selection_rule': 'chi_min <= chi_gal < chi_max',
+            'first_plane': bool(distance_context['first_plane']),
+            'source_planes': distance_context['source_planes'],
+        }
     sample = failed[:5]
     rows = np.flatnonzero(catalog_mask)[sample] if catalog_mask is not None else None
     for sample_idx, idx in enumerate(sample):
@@ -328,6 +337,20 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
             'valid_candidate_count': int(len(pixels)), 'source_convex_hull': hull_info,
             'candidates': [],
         }
+        if distance_context is not None:
+            # Context arrays are full catalog arrays; recover the original row.
+            row = int(rows[sample_idx]) if rows is not None else int(idx)
+            chi = float(distance_context['catalog_chi_gal'][row])
+            lower = float(distance_context['chi_min'])
+            upper = float(distance_context['chi_max'])
+            entry['redshift_true'] = float(distance_context['catalog_redshift_true'][row])
+            entry['chi_gal_mpc_h'] = chi
+            entry['within_selected_interval'] = bool(lower <= chi < upper)
+            entry['distance_from_lower_bound_mpc_h'] = chi - lower
+            entry['distance_to_upper_bound_mpc_h'] = upper - chi
+            print(f"[diagnostics] Galaxy subset index {idx}: z_true={entry['redshift_true']:.10g}, "
+                  f"chi_gal={chi:.10g} Mpc/h, interval=[{lower:.10g}, {upper:.10g}), "
+                  f"within interval={entry['within_selected_interval']}", flush=True)
         for rank, pixel in enumerate(pixels):
             entry['candidates'].append({
                 'source_distance_rank': rank, 'pixel_id': int(pixel),
@@ -368,7 +391,8 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
 
 
 def get_lensing_interpolation(state, ra_in, dec_in, nside,
-                              catalog_filename=None, catalog_mask=None):
+                              catalog_filename=None, catalog_mask=None,
+                              distance_context=None):
     """
     Get single plane lensing for a set of galaxies based on RA, dec position
     """
@@ -401,6 +425,7 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside,
                 write_triangle_failure_diagnostics(
                     state, ra_in, dec_in, nside, pix_list, idx_dist,
                     error.failed_indices, levels, catalog_filename, catalog_mask,
+                    distance_context,
                 )
             except Exception as diagnostic_error:
                 print(f"[diagnostics] Could not save diagnostics: {diagnostic_error}", flush=True)

@@ -186,13 +186,26 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
                 continue
 
             # upper and lower planes then interpolation
+            distance_context = {
+                'catalog_redshift_true': z_in,
+                'catalog_chi_gal': chi_gal,
+                'chi_min': chi_min, 'chi_max': chi_max,
+                'first_plane': first_plane,
+                'source_planes': [
+                    {'plane_index': int(plane.step_idx),
+                     'chi_mpc_h': float(get_chi_step(plane.step_idx, sim)[2])}
+                    for plane in (state, state2)
+                ],
+            }
             print(f"[catalog] Spatial interpolation at source state {state.step_idx}", flush=True)
             plane_vals = get_lensing_interpolation(state, ra_in[mask], dec_in[mask], nside,
-                                                  catalog_filename=filename, catalog_mask=mask)
+                                                  catalog_filename=filename, catalog_mask=mask,
+                                                  distance_context=distance_context)
             if not first_plane:
                 print(f"[catalog] Spatial interpolation at source state {state2.step_idx}", flush=True)
                 plane_vals2 = get_lensing_interpolation(state2, ra_in[mask], dec_in[mask], nside,
-                                                       catalog_filename=filename, catalog_mask=mask)
+                                                       catalog_filename=filename, catalog_mask=mask,
+                                                       distance_context=distance_context)
                 ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = redshift_interpolation(chi_gal[mask], chi_min, chi_max, plane_vals, plane_vals2)
             else: 
                 ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = get_plane_vals(chi_gal[mask], chi_min, chi_max, plane_vals)
