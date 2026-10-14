@@ -145,8 +145,10 @@ def update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shea
     gal_file['data']['ra_obs'][mask] = ra_val
     gal_file['data']['dec_obs'][mask] = dec_val
     gal_file['data']['kappa'][mask] = kappa_val
-    gal_file['data']['shear1'][mask] = shear1_val
-    gal_file['data']['shear2'][mask] = shear2_val
+    # Convert the internal map convention to TreeCorr's sky convention only
+    # at the catalog output boundary. Keep internal Jacobians unchanged.
+    gal_file['data']['shear1'][mask] = -shear1_val
+    gal_file['data']['shear2'][mask] = -shear2_val
     gal_file['data']['lensing_w'][mask] = w_val
 
     deta = (1-kappa_val)**2-(shear1_val**2+shear2_val**2) + w_val**2
