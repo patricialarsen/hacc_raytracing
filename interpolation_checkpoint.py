@@ -15,20 +15,30 @@ class InterpolationCheckpoint:
     using different checkpoints must still use disjoint galaxy catalogs.
     """
 
-    def __init__(self, path, metadata, start_plane=1):
+    def __init__(self, path, metadata, start_plane=1, use_lock=True):
         self.path = Path(path).resolve()
         self.metadata = metadata
         self.requested_start = start_plane
         self.lock = None
+        self.use_lock = use_lock
 
     def __enter__(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.lock = open(str(self.path) + '.lock', 'a')
         try:
-            try:
-                fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError as exc:
-                raise RuntimeError(f'Checkpoint is already in use: {self.path}') from exc
+            if self.use_lock:
+                self.lock = open(str(self.path) + '.lock', 'a')
+                try:
+                    fcntl.flock(self.lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError as exc:
+                    raise RuntimeError(f'Checkpoint is already in use: {self.path}') from exc
+                except OSError as exc:
+                    raise RuntimeError(
+                        f'Cannot lock checkpoint {self.path}: {exc}. '
+                        'If filesystem locking is unsupported, use --no-checkpoint-lock '
+                        'with a distinct checkpoint and disjoint patches for each job.'
+                    ) from exc
+            else:
+                print('[restart] Checkpoint locking disabled: do not share this checkpoint or its catalogs with another running job.', flush=True)
             if self.path.exists():
                 with self.path.open() as source:
                     self.data = json.load(source)

@@ -59,6 +59,8 @@ def main(argv=None):
                         help="First logged plane to process, 1-based (not a galaxy step). Use to bootstrap old runs.")
     parser.add_argument('--checkpoint', help="Progress JSON path; default is a deterministic name in the working directory")
     parser.add_argument('--no-checkpoint', action='store_true', help="Disable progress tracking and automatic resume")
+    parser.add_argument('--no-checkpoint-lock', action='store_true',
+                        help="Skip flock on filesystems that do not support it; requires exclusive use of this checkpoint and its catalogs")
     args = parser.parse_args(argv)
     patches = list(dict.fromkeys(parse_patch_list(args.patch_list)))
     if not patches:
@@ -75,7 +77,8 @@ def main(argv=None):
         path = args.checkpoint or default_checkpoint_path(args.path_gals, path_end, patches)
         metadata = checkpoint_metadata(sim, args.path_gals, path_end, patches,
                                        mag_cols, flux_cols, step_list_gals)
-        manager = InterpolationCheckpoint(path, metadata, args.start_plane)
+        manager = InterpolationCheckpoint(path, metadata, args.start_plane,
+                                          use_lock=not args.no_checkpoint_lock)
     with manager as checkpoint:
         start_plane = checkpoint.start_plane if checkpoint is not None else args.start_plane
         run_interpolation(sim, args.path_gals, path_end, patches, start_plane, checkpoint)
