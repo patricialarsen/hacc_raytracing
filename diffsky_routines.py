@@ -162,12 +162,15 @@ def update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shea
 
     return
 
-def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flux_cols, sim, first_plane=False):
+def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flux_cols, sim, first_plane=False, checkpoint=None):
     """
     Add lensing to galaxy files  
     """
 
     for file_idx, filename in enumerate(filenames, start=1):
+        if checkpoint is not None and checkpoint.is_complete(filename, state.step_idx, first_plane):
+            print(f"[restart] Skipping completed catalog interval: {filename}", flush=True)
+            continue
         file_start = time.perf_counter()
         print(f"[catalog {file_idx}/{len(filenames)}] Opening {filename}", flush=True)
         with h5py.File(filename, "r+") as gal_file:
@@ -185,42 +188,45 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
             print(f"[catalog] Selected {selected}/{ngals} galaxies for chi=[{chi_min:.6g}, {chi_max:.6g}) Mpc/h", flush=True)
             if selected==0:
                 print("[catalog] Skipping: no galaxies in this interval.", flush=True)
-                continue
 
-            # upper and lower planes then interpolation
-            distance_context = {
-                'catalog_redshift_true': z_in,
-                'catalog_chi_gal': chi_gal,
-                'chi_min': chi_min, 'chi_max': chi_max,
-                'first_plane': first_plane,
-                'source_planes': [
-                    {'plane_index': int(plane.step_idx),
-                     'chi_mpc_h': float(get_chi_step(plane.step_idx, sim)[2])}
-                    for plane in (state, state2)
-                ],
-            }
-            print(f"[catalog] Spatial interpolation at source state {state.step_idx}", flush=True)
-            plane_vals = get_lensing_interpolation(state, ra_in[mask], dec_in[mask], nside,
-                                                  catalog_filename=filename, catalog_mask=mask,
-                                                  distance_context=distance_context)
-            if not first_plane:
-                print(f"[catalog] Spatial interpolation at source state {state2.step_idx}", flush=True)
-                plane_vals2 = get_lensing_interpolation(state2, ra_in[mask], dec_in[mask], nside,
-                                                       catalog_filename=filename, catalog_mask=mask,
-                                                       distance_context=distance_context)
-                ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = redshift_interpolation(chi_gal[mask], chi_min, chi_max, plane_vals, plane_vals2)
-            else: 
-                ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = get_plane_vals(chi_gal[mask], chi_min, chi_max, plane_vals)
+            if selected:
+                # upper and lower planes then interpolation
+                distance_context = {
+                    'catalog_redshift_true': z_in,
+                    'catalog_chi_gal': chi_gal,
+                    'chi_min': chi_min, 'chi_max': chi_max,
+                    'first_plane': first_plane,
+                    'source_planes': [
+                        {'plane_index': int(plane.step_idx),
+                         'chi_mpc_h': float(get_chi_step(plane.step_idx, sim)[2])}
+                        for plane in (state, state2)
+                    ],
+                }
+                print(f"[catalog] Spatial interpolation at source state {state.step_idx}", flush=True)
+                plane_vals = get_lensing_interpolation(state, ra_in[mask], dec_in[mask], nside,
+                                                      catalog_filename=filename, catalog_mask=mask,
+                                                      distance_context=distance_context)
+                if not first_plane:
+                    print(f"[catalog] Spatial interpolation at source state {state2.step_idx}", flush=True)
+                    plane_vals2 = get_lensing_interpolation(state2, ra_in[mask], dec_in[mask], nside,
+                                                           catalog_filename=filename, catalog_mask=mask,
+                                                           distance_context=distance_context)
+                    ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = redshift_interpolation(chi_gal[mask], chi_min, chi_max, plane_vals, plane_vals2)
+                else:
+                    ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = get_plane_vals(chi_gal[mask], chi_min, chi_max, plane_vals)
 
-            ra_val, dec_val =  wrap_angles_ra_dec(ra_val, dec_val)
+                ra_val, dec_val =  wrap_angles_ra_dec(ra_val, dec_val)
 
-            # updating the file data
+                # updating the file data
 
-            print("[catalog] Preparing unlensed backups and writing lensing/photometry updates", flush=True)
-            duplicate_unlensed_data(gal_file, mag_cols, flux_cols)
-            initialize_lensing_data(gal_file, ngals)
+                print("[catalog] Preparing unlensed backups and writing lensing/photometry updates", flush=True)
+                duplicate_unlensed_data(gal_file, mag_cols, flux_cols)
+                initialize_lensing_data(gal_file, ngals)
 
-            update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val, mag_cols, flux_cols)
+                update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val, mag_cols, flux_cols)
+        # File close must succeed before an interval can be skipped on restart.
+        if checkpoint is not None:
+            checkpoint.mark_complete(filename, state.step_idx, first_plane, selected)
         print(f"[catalog {file_idx}/{len(filenames)}] Updated {selected} galaxies; file closed; elapsed {time.perf_counter() - file_start:.1f} s", flush=True)
 
     return

@@ -3,21 +3,21 @@
 import os
 import sys
 import time
+import argparse
+from contextlib import nullcontext
 os.environ["OMP_NUM_THREADS"] = "128"
 import healpy as hp
 import numpy as np
 
 from hacc_sims import LJ_simulation
+from interpolation_checkpoint import (InterpolationCheckpoint, checkpoint_metadata,
+                                      default_checkpoint_path)
 from utils import initialize_singleplane_state_from_outputs, rotate_state_to_observer_basis_inplace
 from transport_xyz import warmup_numba_kernels_transport
 from diffsky_routines import add_lensing, galaxy_steps_overlapping_chi_interval, galaxy_steps_overlapping_chi_interval_z0, parse_patch_list
 
 
 nthreads = 128
-
-print('Setting up', flush=True)
-warmup_numba_kernels_transport()
-
 
 step_list_gals = np.array([
     "97", "100", "102", "105", "107", "110", "113", "116", "119",
@@ -51,80 +51,84 @@ flux_cols = [
 
 
 def main(argv=None):
-    if argv is None:
-        argv = sys.argv[1:]
-    if len(argv) < 3:
-        raise SystemExit(
-            "usage: python run_interpolation.py PATH_GALS SYNTHETIC_FLAG PATCH_LIST "
-        )
-
-    path_gals = argv[0]
-    synthetic = argv[1]
-    patch_list = parse_patch_list(argv[2])
-
-    if path_gals and not path_gals.endswith("/"):
-        path_gals = path_gals + "/"
-
-    if synthetic == "S":
-        path_end = ".diffsky_gals.synthetic_halos.hdf5"
-    else:
-        path_end = ".diffsky_gals.hdf5"
-
+    parser = argparse.ArgumentParser(description="Interpolate lensing into Diffsky catalogs, with automatic restart.")
+    parser.add_argument('path_gals')
+    parser.add_argument('synthetic_flag', help="S for synthetic halos; N for regular galaxies")
+    parser.add_argument('patch_list', help="For example 0:20 (stop is excluded)")
+    parser.add_argument('--start-plane', type=int, default=1,
+                        help="First logged plane to process, 1-based (not a galaxy step). Use to bootstrap old runs.")
+    parser.add_argument('--checkpoint', help="Progress JSON path; default is a deterministic name in the working directory")
+    parser.add_argument('--no-checkpoint', action='store_true', help="Disable progress tracking and automatic resume")
+    args = parser.parse_args(argv)
+    patches = list(dict.fromkeys(parse_patch_list(args.patch_list)))
+    if not patches:
+        parser.error('Patch list is empty')
+    path_end = '.diffsky_gals.synthetic_halos.hdf5' if args.synthetic_flag == 'S' else '.diffsky_gals.hdf5'
     sim = LJ_simulation()
+    if not 1 <= args.start_plane <= sim['nplanes']:
+        parser.error(f"--start-plane must be between 1 and {sim['nplanes']}")
+    if args.no_checkpoint and args.checkpoint:
+        parser.error('--checkpoint and --no-checkpoint cannot be combined')
+    if args.no_checkpoint:
+        manager = nullcontext(None)
+    else:
+        path = args.checkpoint or default_checkpoint_path(args.path_gals, path_end, patches)
+        metadata = checkpoint_metadata(sim, args.path_gals, path_end, patches,
+                                       mag_cols, flux_cols, step_list_gals)
+        manager = InterpolationCheckpoint(path, metadata, args.start_plane)
+    with manager as checkpoint:
+        start_plane = checkpoint.start_plane if checkpoint is not None else args.start_plane
+        run_interpolation(sim, args.path_gals, path_end, patches, start_plane, checkpoint)
+
+
+def run_interpolation(sim, path_gals, path_end, patch_list, start_plane, checkpoint):
+    def catalog_files(steps):
+        return [os.path.join(path_gals, f"lc_cores-{step}.{patch}{path_end}")
+                for step in steps for patch in patch_list]
+
     nside = sim['nside']
-    npix = hp.nside2npix(nside)
-
-    step_idx = 0; step_idx2 = 1;
-    theta0, phi0 = hp.pix2ang(nside, np.arange(hp.nside2npix(nside)))
-
-
-    while(step_idx<sim['nplanes']):
+    theta0 = phi0 = None
+    for step_idx in range(start_plane - 1, sim['nplanes']):
+        step_idx2 = step_idx + 1
         plane_start = time.perf_counter()
+        gal_steps, chi_min, chi_max = galaxy_steps_overlapping_chi_interval(
+            step_idx, step_idx2, step_list_gals, sim)
+        jobs = [(catalog_files(gal_steps), chi_min, chi_max, False)]
+        if step_idx == 0:
+            low_steps, low_chi_max = galaxy_steps_overlapping_chi_interval_z0(
+                step_idx, step_list_gals, sim)
+            jobs.append((catalog_files(low_steps), 0, low_chi_max, True))
+        pending_jobs = []
+        for filenames, lower, upper, first_plane in jobs:
+            pending = (checkpoint.pending_files(filenames, step_idx, first_plane)
+                       if checkpoint is not None else filenames)
+            if len(pending) < len(filenames):
+                print(f"[plane {step_idx + 1}/{sim['nplanes']}] Restart: skipping {len(filenames) - len(pending)} completed catalog intervals (first_plane={first_plane})", flush=True)
+            if pending:
+                pending_jobs.append((pending, lower, upper, first_plane))
+        if not pending_jobs:
+            print(f"[plane {step_idx + 1}/{sim['nplanes']}] No pending catalog updates; skipping map reads", flush=True)
+            continue
+        if theta0 is None:
+            print('Setting up', flush=True)
+            warmup_numba_kernels_transport()
+            theta0, phi0 = hp.pix2ang(nside, np.arange(hp.nside2npix(nside)))
         print(f"[plane {step_idx + 1}/{sim['nplanes']}] Loading and rotating source states {step_idx}, {step_idx2}", flush=True)
-        # initialize state and rotate values to observer basis 
         state = initialize_singleplane_state_from_outputs(sim, step_idx)
         rotate_state_to_observer_basis_inplace(state, theta0, phi0)
-
         state2 = initialize_singleplane_state_from_outputs(sim, step_idx2)
         rotate_state_to_observer_basis_inplace(state2, theta0, phi0)
-
-        gal_steps, chi_min, chi_max = galaxy_steps_overlapping_chi_interval(step_idx, step_idx2, step_list_gals, sim)
         print(f"[plane {step_idx + 1}/{sim['nplanes']}] States ready; chi=[{chi_min:.6g}, {chi_max:.6g}) Mpc/h; galaxy steps={list(gal_steps)}", flush=True)
-
-        candidate_files = []
-        if len(gal_steps)>0:
-            candidate_files = []
-            for step in gal_steps:
-                for patch in patch_list:
-                    filename = path_gals + "lc_cores-" + str(step) + "." + str(patch) + path_end
-                    # will need to update each file separately
-                    candidate_files.append(filename)
-                
-        add_lensing(candidate_files, state, state2, nside, chi_min, chi_max, mag_cols, flux_cols, sim)
-
-        # adding the set of galaxies which are just beyond one bound 
-        if step_idx==0:
-            gal_steps, chi_max = galaxy_steps_overlapping_chi_interval_z0(step_idx, step_list_gals, sim)
-            print(f"[plane 1/{sim['nplanes']}] Processing galaxies below the first source plane: chi=[0, {chi_max:.6g}) Mpc/h", flush=True)
-            if len(gal_steps)>0:
-                candidate_files = []
-                for step in gal_steps:
-                    for patch in patch_list:
-                        filename = path_gals + "lc_cores-" + str(step) + "." + str(patch) + path_end
-                        # will need to update each file separately
-                        candidate_files.append(filename)
-
-            add_lensing(candidate_files, state, state2, nside, 0, chi_max, mag_cols, flux_cols, sim, first_plane=True)
-
-
-
+        for filenames, lower, upper, first_plane in pending_jobs:
+            if first_plane:
+                print(f"[plane 1/{sim['nplanes']}] Processing galaxies below the first source plane: chi=[0, {upper:.6g}) Mpc/h", flush=True)
+            add_lensing(filenames, state, state2, nside, lower, upper,
+                        mag_cols, flux_cols, sim, first_plane=first_plane,
+                        checkpoint=checkpoint)
+        del state, state2
         print(f"[plane {step_idx + 1}/{sim['nplanes']}] Complete in {time.perf_counter() - plane_start:.1f} s", flush=True)
-        step_idx +=1
-        step_idx2 +=1 
-
-    print("Interpolation complete: all configured plane intervals processed.", flush=True)
+    print(f"Interpolation complete: configured plane intervals {start_plane}..{sim['nplanes']} processed.", flush=True)
 
 
 if __name__ == "__main__":
     main()
-
