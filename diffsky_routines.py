@@ -172,19 +172,28 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
             print(f"[restart] Skipping completed catalog interval: {filename}", flush=True)
             continue
         file_start = time.perf_counter()
+        timings = dict(open_s=0., read_s=0., distance_mask_s=0., spatial0_s=0.,
+                       spatial1_s=0., distance_interp_s=0., backups_init_s=0.,
+                       write_s=0., close_s=0., checkpoint_s=0.)
         print(f"[catalog {file_idx}/{len(filenames)}] Opening {filename}", flush=True)
         with h5py.File(filename, "r+") as gal_file:
+            stage_start = time.perf_counter()
+            timings['open_s'] = stage_start - file_start
             data = gal_file["data"]
             ra_in = data["ra_nfw"][:]
             dec_in = data["dec_nfw"][:]
             z_in = data["redshift_true"][:]
             ngals = ra_in.size
+            stage_end = time.perf_counter()
+            timings['read_s'] = stage_end - stage_start
+            stage_start = stage_end
 
             # determine which galaxies need updating
             chi_gal = chi_from_redshift(z_in, sim)
             mask = (chi_gal < chi_max) * (chi_gal >= chi_min)
 
             selected = int(np.count_nonzero(mask))
+            timings['distance_mask_s'] = time.perf_counter() - stage_start
             print(f"[catalog] Selected {selected}/{ngals} galaxies for chi=[{chi_min:.6g}, {chi_max:.6g}) Mpc/h", flush=True)
             if selected==0:
                 print("[catalog] Skipping: no galaxies in this interval.", flush=True)
@@ -203,30 +212,47 @@ def add_lensing(filenames, state, state2, nside, chi_min, chi_max, mag_cols, flu
                     ],
                 }
                 print(f"[catalog] Spatial interpolation at source state {state.step_idx}", flush=True)
+                stage_start = time.perf_counter()
                 plane_vals = get_lensing_interpolation(state, ra_in[mask], dec_in[mask], nside,
                                                       catalog_filename=filename, catalog_mask=mask,
                                                       distance_context=distance_context)
+                timings['spatial0_s'] = time.perf_counter() - stage_start
                 if not first_plane:
                     print(f"[catalog] Spatial interpolation at source state {state2.step_idx}", flush=True)
+                    stage_start = time.perf_counter()
                     plane_vals2 = get_lensing_interpolation(state2, ra_in[mask], dec_in[mask], nside,
                                                            catalog_filename=filename, catalog_mask=mask,
                                                            distance_context=distance_context)
+                    timings['spatial1_s'] = time.perf_counter() - stage_start
+                    stage_start = time.perf_counter()
                     ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = redshift_interpolation(chi_gal[mask], chi_min, chi_max, plane_vals, plane_vals2)
                 else:
+                    stage_start = time.perf_counter()
                     ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val = get_plane_vals(chi_gal[mask], chi_min, chi_max, plane_vals)
 
                 ra_val, dec_val =  wrap_angles_ra_dec(ra_val, dec_val)
+                timings['distance_interp_s'] = time.perf_counter() - stage_start
 
                 # updating the file data
 
                 print("[catalog] Preparing unlensed backups and writing lensing/photometry updates", flush=True)
+                stage_start = time.perf_counter()
                 duplicate_unlensed_data(gal_file, mag_cols, flux_cols)
                 initialize_lensing_data(gal_file, ngals)
+                timings['backups_init_s'] = time.perf_counter() - stage_start
 
+                stage_start = time.perf_counter()
                 update_gal_file(gal_file, mask, ra_val, dec_val, kappa_val, shear1_val, shear2_val, w_val, mag_cols, flux_cols)
+                timings['write_s'] = time.perf_counter() - stage_start
+            close_start = time.perf_counter()
+        timings['close_s'] = time.perf_counter() - close_start
         # File close must succeed before an interval can be skipped on restart.
+        stage_start = time.perf_counter()
         if checkpoint is not None:
             checkpoint.mark_complete(filename, state.step_idx, first_plane, selected)
+        timings['checkpoint_s'] = time.perf_counter() - stage_start
+        print(f"[profile catalog] file={filename} selected={selected} total_galaxies={ngals} "
+              + ' '.join(f'{name}={value:.4f}' for name, value in timings.items()), flush=True)
         print(f"[catalog {file_idx}/{len(filenames)}] Updated {selected} galaxies; file closed; elapsed {time.perf_counter() - file_start:.1f} s", flush=True)
 
     return

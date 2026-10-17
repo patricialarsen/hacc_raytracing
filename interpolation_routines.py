@@ -3,6 +3,7 @@ import healpy as hp
 import json
 import os
 import tempfile
+import time
 from utils import maps_from_jacobian
 
 
@@ -130,8 +131,32 @@ def get_w(e1_pix, e2_pix, idx1, idx2, idx3, det):
     return w0, w1, w2
     
     
+def outside_candidate_hulls(e1_pix, e2_pix, tol):
+    """Conservatively reject origins strictly outside their candidate hulls.
+
+    Boundary/degenerate cases still use the original triangle containment test.
+    """
+    from scipy.spatial import ConvexHull, QhullError
+
+    outside = np.zeros(e1_pix.shape[1], dtype=bool)
+    for column in range(e1_pix.shape[1]):
+        points = np.column_stack((e1_pix[:, column], e2_pix[:, column]))
+        points = points[np.all(np.isfinite(points), axis=1)]
+        if len(points) < 3:
+            continue
+        try:
+            hull = ConvexHull(points)
+        except QhullError:
+            continue
+        # Cover roundoff in hull construction and the permitted negative weights.
+        scale = np.max(np.abs(points))
+        margin = (128 * np.finfo(float).eps + 8 * abs(tol)) * scale
+        outside[column] = np.max(hull.equations[:, -1]) > margin
+    return outside
+
+
 def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None,
-                allow_partial=False):
+                allow_partial=False, profile=None):
     """
     Return barycentric weights and three sorted-candidate indices per galaxy.
     Try the nearest four rays first, then additional triples only for failures.
@@ -171,23 +196,36 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None,
     w1 = np.stack([w1_a, w1_b, w1_c, w1_d], axis=0)[triangle_choice, gal_idx]
     w2 = np.stack([w2_a, w2_b, w2_c, w2_d], axis=0)[triangle_choice, gal_idx]
 
-    # Introduce farther rays in distance order, without changing successful results.
+    unresolved = np.flatnonzero(~has_triangle)
+    hull_start = time.perf_counter()
+    outside = outside_candidate_hulls(e1_pix[:, unresolved], e2_pix[:, unresolved], tol) if unresolved.size else np.empty(0, dtype=bool)
+    hull_seconds = time.perf_counter() - hull_start
+    outside_count = int(np.count_nonzero(outside))
+    if outside_count:
+        print(f"[triangles] {outside_count}/{fallback_count} fallback galaxies outside candidate hull; skipping impossible triangle searches", flush=True)
+    unresolved = unresolved[~outside]
+    triangle_count = galaxy_tests = 0
+    # Preserve the original triple order and acceptance criteria for candidates
+    # that can enclose the galaxy. Keep only the active indices, and gather just
+    # three vertices instead of copying the full neighborhood for every triple.
     for farthest in range(4, e1_pix.shape[0]):
-        if has_triangle.all():
+        if unresolved.size == 0:
             break
         for first in range(farthest - 1):
-            if has_triangle.all():
+            if unresolved.size == 0:
                 break
             for second in range(first + 1, farthest):
-                unresolved = np.flatnonzero(~has_triangle)
                 if unresolved.size == 0:
                     break
-                x = e1_pix[:, unresolved]
-                y = e2_pix[:, unresolved]
                 triple = (first, second, farthest)
-                det = get_det(x, y, *triple)
+                rows = np.array(triple)[:, None]
+                x = e1_pix[rows, unresolved[None, :]]
+                y = e2_pix[rows, unresolved[None, :]]
+                triangle_count += 1
+                galaxy_tests += unresolved.size
+                det = get_det(x, y, 0, 1, 2)
                 with np.errstate(divide='ignore', invalid='ignore'):
-                    a, b, c = get_w(x, y, *triple, det)
+                    a, b, c = get_w(x, y, 0, 1, 2, det)
                 valid = (
                     np.isfinite(a) & np.isfinite(b) & np.isfinite(c)
                     & (a > -tol) & (b > -tol) & (c > -tol)
@@ -197,6 +235,14 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None,
                 w0[resolved], w1[resolved], w2[resolved] = a[valid], b[valid], c[valid]
                 triangle_indices[resolved] = triple
                 has_triangle[resolved] = True
+                if resolved.size:
+                    unresolved = unresolved[~valid]
+
+    if profile is not None:
+        profile.update(fallback_galaxies=fallback_count, outside_hull=outside_count,
+                       hull_s=hull_seconds, fallback_triangles=triangle_count,
+                       fallback_galaxy_tests=int(galaxy_tests),
+                       unresolved=int(np.count_nonzero(~has_triangle)))
 
     if not has_triangle.all() and not allow_partial:
         failed = np.flatnonzero(~has_triangle)
@@ -210,7 +256,7 @@ def get_weights(e1_pix, e2_pix, tol = 1.e-20, ra_in=None, dec_in=None,
         determinants = np.stack([d[sample] for d in [det_a, det_b, det_c, det_d]], axis=0)
         lines = [
             f"No valid triangle encompassing the galaxy: {failed.size}/{has_triangle.size} galaxies failed.",
-            f"No enclosing triangle after testing all triples among {e1_pix.shape[0]} candidate slots; tol={tol:g}.",
+            f"No enclosing triangle among {e1_pix.shape[0]} candidate slots (hull rejection or exhausted triangle search); tol={tol:g}.",
             "Indices refer to the galaxy subset passed to spatial interpolation.",
         ]
         for sample_idx, idx in enumerate(sample):
@@ -440,8 +486,10 @@ def _get_lensing_interpolation_at_level(state, ra_in, dec_in, nside, levels):
     """
     Attempt one neighborhood size; return partial values and a resolution mask.
     """
-    ngals = hp.ang2vec(ra_in, dec_in, lonlat=True).T # first galaxy only for now
+    level_start = time.perf_counter()
+    ngals = hp.ang2vec(ra_in, dec_in, lonlat=True).T
     pix_list = get_candidates(nside, ngals, levels=levels)
+    neighbors_done = time.perf_counter()
 
     x_pix, y_pix, z_pix = hp.ang2vec(state.theta[pix_list], state.phi[pix_list]).T
     x_obs_pix, y_obs_pix, z_obs_pix = hp.pix2vec(nside, pix_list)
@@ -459,10 +507,14 @@ def _get_lensing_interpolation_at_level(state, ra_in, dec_in, nside, levels):
     invalid = np.take_along_axis(pix_list < 0, idx_dist, axis=0)
     e1_pix[invalid] = np.nan
     e2_pix[invalid] = np.nan
+    geometry_done = time.perf_counter()
 
+    search_profile = {}
     w0, w1, w2, idx_list, resolved = get_weights(
         e1_pix, e2_pix, ra_in=ra_in, dec_in=dec_in, allow_partial=True,
+        profile=search_profile,
     )
+    search_done = time.perf_counter()
     columns = np.flatnonzero(resolved)
     vertices = idx_list[resolved].T
     x_obs_pix = np.take_along_axis(x_obs_pix, idx_dist, axis=0)[vertices, columns[None, :]]
@@ -479,6 +531,20 @@ def _get_lensing_interpolation_at_level(state, ra_in, dec_in, nside, levels):
     plane_vals = {key: np.full(ra_in.size, np.nan) for key in keys}
     for key, values in zip(keys, (x_obs, y_obs, z_obs, kappa_obs, shear1_obs, shear2_obs, w_obs)):
         plane_vals[key][resolved] = values
+    level_done = time.perf_counter()
+    print(
+        f"[profile spatial] state={state.step_idx} level={levels} galaxies={ra_in.size} "
+        f"candidate_slots={pix_list.shape[0]} resolved={int(np.count_nonzero(resolved))} "
+        f"neighbors_s={neighbors_done - level_start:.4f} "
+        f"geometry_sort_s={geometry_done - neighbors_done:.4f} "
+        f"search_s={search_done - geometry_done:.4f} "
+        f"hull_s={search_profile['hull_s']:.4f} "
+        f"outside_hull={search_profile['outside_hull']} "
+        f"fallback_triangles={search_profile['fallback_triangles']} "
+        f"fallback_galaxy_tests={search_profile['fallback_galaxy_tests']} "
+        f"values_s={level_done - search_done:.4f} total_s={level_done - level_start:.4f}",
+        flush=True,
+    )
     return plane_vals, resolved, pix_list, idx_dist
 
 def linear_interp(x, x0, x1, y0, y1):

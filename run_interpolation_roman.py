@@ -61,6 +61,8 @@ def main(argv=None):
     parser.add_argument('--no-checkpoint', action='store_true', help="Disable progress tracking and automatic resume")
     parser.add_argument('--no-checkpoint-lock', action='store_true',
                         help="Skip flock on filesystems that do not support it; requires exclusive use of this checkpoint and its catalogs")
+    parser.add_argument('--accept-code-change', action='store_true',
+                        help="Keep progress after a reviewed code-only update; configuration changes are still rejected")
     args = parser.parse_args(argv)
     patches = list(dict.fromkeys(parse_patch_list(args.patch_list)))
     if not patches:
@@ -78,7 +80,8 @@ def main(argv=None):
         metadata = checkpoint_metadata(sim, args.path_gals, path_end, patches,
                                        mag_cols, flux_cols, step_list_gals)
         manager = InterpolationCheckpoint(path, metadata, args.start_plane,
-                                          use_lock=not args.no_checkpoint_lock)
+                                          use_lock=not args.no_checkpoint_lock,
+                                          accept_code_change=args.accept_code_change)
     with manager as checkpoint:
         start_plane = checkpoint.start_plane if checkpoint is not None else args.start_plane
         run_interpolation(sim, args.path_gals, path_end, patches, start_plane, checkpoint)
@@ -114,20 +117,34 @@ def run_interpolation(sim, path_gals, path_end, patch_list, start_plane, checkpo
             continue
         if theta0 is None:
             print('Setting up', flush=True)
+            setup_start = time.perf_counter()
             warmup_numba_kernels_transport()
+            warmup_done = time.perf_counter()
             theta0, phi0 = hp.pix2ang(nside, np.arange(hp.nside2npix(nside)))
+            print(f"[profile setup] warmup_s={warmup_done - setup_start:.4f} observer_grid_s={time.perf_counter() - warmup_done:.4f}", flush=True)
         print(f"[plane {step_idx + 1}/{sim['nplanes']}] Loading and rotating source states {step_idx}, {step_idx2}", flush=True)
+        load_start = time.perf_counter()
         state = initialize_singleplane_state_from_outputs(sim, step_idx)
+        load0_done = time.perf_counter()
         rotate_state_to_observer_basis_inplace(state, theta0, phi0)
+        rotate0_done = time.perf_counter()
         state2 = initialize_singleplane_state_from_outputs(sim, step_idx2)
+        load1_done = time.perf_counter()
         rotate_state_to_observer_basis_inplace(state2, theta0, phi0)
+        rotate1_done = time.perf_counter()
+        print(f"[profile maps] plane={step_idx + 1} load0_s={load0_done - load_start:.4f} "
+              f"rotate0_s={rotate0_done - load0_done:.4f} load1_s={load1_done - rotate0_done:.4f} "
+              f"rotate1_s={rotate1_done - load1_done:.4f}", flush=True)
         print(f"[plane {step_idx + 1}/{sim['nplanes']}] States ready; chi=[{chi_min:.6g}, {chi_max:.6g}) Mpc/h; galaxy steps={list(gal_steps)}", flush=True)
+        catalog_start = time.perf_counter()
         for filenames, lower, upper, first_plane in pending_jobs:
             if first_plane:
                 print(f"[plane 1/{sim['nplanes']}] Processing galaxies below the first source plane: chi=[0, {upper:.6g}) Mpc/h", flush=True)
             add_lensing(filenames, state, state2, nside, lower, upper,
                         mag_cols, flux_cols, sim, first_plane=first_plane,
                         checkpoint=checkpoint)
+        print(f"[profile plane] plane={step_idx + 1} maps_s={rotate1_done - load_start:.4f} "
+              f"catalogs_s={time.perf_counter() - catalog_start:.4f}", flush=True)
         del state, state2
         print(f"[plane {step_idx + 1}/{sim['nplanes']}] Complete in {time.perf_counter() - plane_start:.1f} s", flush=True)
     print(f"Interpolation complete: configured plane intervals {start_plane}..{sim['nplanes']} processed.", flush=True)

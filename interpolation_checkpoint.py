@@ -15,12 +15,14 @@ class InterpolationCheckpoint:
     using different checkpoints must still use disjoint galaxy catalogs.
     """
 
-    def __init__(self, path, metadata, start_plane=1, use_lock=True):
+    def __init__(self, path, metadata, start_plane=1, use_lock=True,
+                 accept_code_change=False):
         self.path = Path(path).resolve()
         self.metadata = metadata
         self.requested_start = start_plane
         self.lock = None
         self.use_lock = use_lock
+        self.accept_code_change = accept_code_change
 
     def __enter__(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -42,10 +44,22 @@ class InterpolationCheckpoint:
             if self.path.exists():
                 with self.path.open() as source:
                     self.data = json.load(source)
+                old_metadata = self.data.get('metadata')
+                code_only_change = (
+                    isinstance(old_metadata, dict)
+                    and {k: v for k, v in old_metadata.items() if k != 'code_sha256'}
+                    == {k: v for k, v in self.metadata.items() if k != 'code_sha256'}
+                )
+                if (self.data.get('version') == 1 and old_metadata != self.metadata
+                        and code_only_change and self.accept_code_change):
+                    self.data['metadata'] = self.metadata
+                    self._save()
+                    print('[restart] Accepted code-only change; existing completion records preserved.', flush=True)
                 if self.data.get('version') != 1 or self.data.get('metadata') != self.metadata:
                     raise ValueError(
                         f'Checkpoint configuration/code mismatch: {self.path}. '
-                        'Use a new checkpoint path for an intentional new run.'
+                        'For reviewed code-only changes, use --accept-code-change. '
+                        'Use a new checkpoint path for a different calculation.'
                     )
                 if not isinstance(self.data.get('completed'), dict):
                     raise ValueError(f'Invalid checkpoint: {self.path}')
