@@ -62,6 +62,44 @@ def get_distance(ngal, nside, x_pix, y_pix, z_pix, pix):
     idx_dist = np.argsort(dist,axis=0)
     return idx_dist
 
+
+def first_order_observer_guess(state, source_vectors, nside):
+    """One inverse-deflection estimate, entirely in Cartesian coordinates.
+
+    Sample the forward ray at the observer pixel nearest the unlensed source.
+    Apply the shortest rotation from that ray's source direction back to its
+    observer direction to the target source. This is a local constant-deflection
+    approximation for the SEARCH CENTER only; triangle targets are unchanged.
+    Invalid or antipodal seed mappings retain the uncorrected center.
+    """
+    guess = np.asarray(source_vectors, dtype=np.float64).copy()
+    if guess.shape[1] == 0:
+        return guess
+    pixels = hp.vec2pix(nside, *guess)
+    observer = np.array(hp.pix2vec(nside, pixels))
+    theta, phi = state.theta[pixels], state.phi[pixels]
+    valid = np.isfinite(theta) & np.isfinite(phi) & (theta >= 0) & (theta <= np.pi)
+    columns = np.flatnonzero(valid)
+    if columns.size == 0:
+        return guess
+    source = hp.ang2vec(theta[valid], phi[valid])
+    target = guess[:, valid].T
+    obs = observer[:, valid].T
+    cosine = np.clip(np.sum(source * obs, axis=1), -1., 1.)
+    usable = (1. + cosine) > 1e-12
+    columns = columns[usable]
+    source, obs, target, cosine = source[usable], obs[usable], target[usable], cosine[usable]
+    # Rodrigues rotation without an angle or division by sin(angle): continuous
+    # at zero deflection and independent of the RA convention at either pole.
+    axis_sine = np.cross(source, obs)
+    cross_target = np.cross(axis_sine, target)
+    corrected = (target + cross_target
+                 + np.cross(axis_sine, cross_target) / (1. + cosine)[:, None])
+    norm = np.linalg.norm(corrected, axis=1)
+    finite = np.all(np.isfinite(corrected), axis=1) & (norm > 0)
+    guess[:, columns[finite]] = (corrected[finite] / norm[finite, None]).T
+    return guess
+
 def get_tangent_vec(ngal, x_pix, y_pix, z_pix):
     """
     Get tangent vector component of pixel location to a galaxy norm vector  
@@ -309,7 +347,8 @@ def get_obs_lensing(w0, w1, w2, state, pix_list):
 def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
                                        idx_dist, failed, levels,
                                        catalog_filename=None, catalog_mask=None,
-                                       distance_context=None, subset_indices=None):
+                                       distance_context=None, subset_indices=None,
+                                       search_centers=None):
     """Save full candidate geometry for up to five failures, without changing data."""
     from scipy.spatial import ConvexHull, QhullError
 
@@ -340,6 +379,7 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
         pixels = pix_list[idx_dist[:, idx], idx]
         pixels = pixels[pixels >= 0]
         galaxy = hp.ang2vec(float(ra_in[idx]), float(dec_in[idx]), lonlat=True)
+        search_center = galaxy if search_centers is None else search_centers[:, idx]
         observer = np.array(hp.pix2vec(nside, pixels))
         source = hp.ang2vec(state.theta[pixels], state.phi[pixels]).T
         basis = get_tangent_basis(galaxy[:, None])
@@ -354,10 +394,10 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
         neighbors = hp.get_all_neighbours(nside, pixels)
         boundary = np.any((neighbors >= 0) & ~np.isin(neighbors, pixels), axis=0)
         if levels > 1:
-            inner = get_candidates(nside, galaxy[:, None], levels=levels - 1)[:, 0]
+            inner = get_candidates(nside, search_center[:, None], levels=levels - 1)[:, 0]
             outer_layer = ~np.isin(pixels, inner[inner >= 0])
         else:
-            outer_layer = pixels != hp.vec2pix(nside, *galaxy)
+            outer_layer = pixels != hp.vec2pix(nside, *search_center)
         finite = np.all(np.isfinite(source_offsets), axis=1)
         hull_info = {'status': 'unavailable'}
         try:
@@ -382,6 +422,9 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
             'valid_candidate_count': int(len(pixels)), 'source_convex_hull': hull_info,
             'candidates': [],
         }
+        center_ra, center_dec = hp.vec2ang(search_center, lonlat=True)
+        entry['search_center_ra_deg'] = float(center_ra[0])
+        entry['search_center_dec_deg'] = float(center_dec[0])
         if distance_context is not None:
             # Context arrays are full catalog arrays; recover the original row.
             row = int(rows[sample_idx]) if rows is not None else original_idx
@@ -437,7 +480,8 @@ def write_triangle_failure_diagnostics(state, ra_in, dec_in, nside, pix_list,
 
 def get_lensing_interpolation(state, ra_in, dec_in, nside,
                               catalog_filename=None, catalog_mask=None,
-                              distance_context=None, initial_levels=3, max_levels=8):
+                              distance_context=None, initial_levels=3, max_levels=8,
+                              correct_first_guess=True):
     """Interpolate with wider neighborhoods only for unresolved galaxies."""
     if initial_levels < 1 or max_levels < initial_levels:
         raise ValueError('Require 1 <= initial_levels <= max_levels')
@@ -446,11 +490,21 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside,
     keys = ('x_obs', 'y_obs', 'z_obs', 'kappa_obs', 'shear1_obs', 'shear2_obs', 'w_obs')
     result = {key: np.empty(ra_in.size, dtype=np.float64) for key in keys}
     pending = np.arange(ra_in.size)
+    if not pending.size:
+        return result
+    guess_start = time.perf_counter()
+    targets = hp.ang2vec(ra_in, dec_in, lonlat=True).T
+    search_centers = first_order_observer_guess(state, targets, nside) if correct_first_guess else targets
+    shift = 2 * np.arcsin(np.clip(np.linalg.norm(search_centers - targets, axis=0) / 2, 0, 1))
+    print(f"[profile guess] state={state.step_idx} galaxies={ra_in.size} corrected={correct_first_guess} "
+          f"guess_s={time.perf_counter() - guess_start:.4f} "
+          f"max_shift_arcsec={np.rad2deg(shift.max()) * 3600:.4f}", flush=True)
     for levels in range(initial_levels, max_levels + 1):
         if pending.size == 0:
             return result
         values, resolved, pix_list, idx_dist = _get_lensing_interpolation_at_level(
             state, ra_in[pending], dec_in[pending], nside, levels,
+            search_centers=search_centers[:, pending],
         )
         for key in keys:
             result[key][pending[resolved]] = values[key][resolved]
@@ -465,6 +519,7 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside,
                     state, ra_in[pending], dec_in[pending], nside, pix_list, idx_dist,
                     failed, levels, catalog_filename, catalog_mask, distance_context,
                     subset_indices=pending,
+                    search_centers=search_centers[:, pending],
                 )
             except Exception as diagnostic_error:
                 print(f"[diagnostics] Could not save diagnostics: {diagnostic_error}", flush=True)
@@ -482,13 +537,15 @@ def get_lensing_interpolation(state, ra_in, dec_in, nside,
     return result
 
 
-def _get_lensing_interpolation_at_level(state, ra_in, dec_in, nside, levels):
+def _get_lensing_interpolation_at_level(state, ra_in, dec_in, nside, levels,
+                                       search_centers=None):
     """
     Attempt one neighborhood size; return partial values and a resolution mask.
     """
     level_start = time.perf_counter()
     ngals = hp.ang2vec(ra_in, dec_in, lonlat=True).T
-    pix_list = get_candidates(nside, ngals, levels=levels)
+    centers = ngals if search_centers is None else search_centers
+    pix_list = get_candidates(nside, centers, levels=levels)
     neighbors_done = time.perf_counter()
 
     x_pix, y_pix, z_pix = hp.ang2vec(state.theta[pix_list], state.phi[pix_list]).T
