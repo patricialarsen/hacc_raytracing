@@ -279,6 +279,7 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
         if (not sim['has_alms']) or (step_idx>=sim['nalms_stored']):
             with timed_rank("Writing alms", comm):
                 hp.write_alm(sim['output_path_alms'] + '/alm_map_'+str(step_idx)+'.fits', alms_lens, overwrite=True)
+                np.savetxt( sim["output_path_alms"] + f"n_perst_{step_idx}.txt", [n_per_steradian],)
 
     if test_synthetic_alms:
         alms_lens = hp.synalm(cl_lens, lmax=lmax, mmax=lmax, new=True,)

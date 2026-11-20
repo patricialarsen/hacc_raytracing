@@ -45,7 +45,7 @@ chi_cmb = sim['chi_cmb']
 nside = sim['nside']
 
 # geometry definitions 
-lmax = 2.5*nside
+lmax = int(2.5*nside)
 
 
 print('Setting up')
@@ -65,7 +65,7 @@ if restart:
     if state.step_idx>sim['nplanes']:
         chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx-1,  sim, lmax, nthreads)
     else:
-        chi_av, alms_filtered = get_input_map_alms(state.step_idx-1, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False)
+        chi_av, alms_filtered = get_input_map_alms(state.step_idx-1, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False,save_alms=True)
         
     gtheta2, gphi2, U11, U12, U22 = iterate_arrays(state.step_idx - 1, alms_filtered, lmax, state.theta, state.phi, nside, nthreads)
     del alms_filtered
@@ -86,7 +86,7 @@ while state.step_idx<sim['nplanes'] + sim['n_steps_cmb']:
         if state.step_idx>sim['nplanes']-1:
             chi_av, alms_filtered = get_synthetic_alms_CCL(state.step_idx, sim, lmax, nthreads)
         else:
-            chi_av, alms_filtered = get_input_map_alms(state.step_idx, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False)
+            chi_av, alms_filtered = get_input_map_alms(state.step_idx, sim, lmax, nthreads, filter='wiener', ell_cut=int(2.5*nside), use_pixel_weights=False,save_alms=True)
     chi_kp1 = chi_av
 
     if state.step_idx>0:
