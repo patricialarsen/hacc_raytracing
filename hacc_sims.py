@@ -51,16 +51,16 @@ def LJ_simulation():
     LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_2p5_wiener_seamfix_alloutputs/'
     LJ_simulation['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/alms/'
 
+    LJ_simulation["cosmo_ccl"] = ccl.Cosmology(Omega_c=Omega_c, Omega_b=Omega_b, h=h, n_s=0.9665, sigma8=0.8102, m_nu=0.0, transfer_function="boltzmann_camb", matter_power_spectrum="halofit",)
+    LJ_simulation["cosmo"] = FlatLambdaCDM(H0=100 * h, Om0=Omega_m, Ob0=Omega_b, Tcmb0=2.7255 * u.K, Neff=3.046, m_nu=0.0 * u.eV,)
 
-    LJ_simulation['cosmo'] = FlatLambdaCDM(H0 = 67.66, Om0 = 0.30964, Ob0 = 0.04897468161869667, Tcmb0 = 0, Neff = 0) 
-    LJ_simulation['cosmo_ccl'] = ccl.Cosmology(Omega_c=0.262, Omega_b=0.0488, h=0.6766, n_s=0.965, sigma8=0.8102,  transfer_function='boltzmann_camb',
-matter_power_spectrum='halofit')
+    LJ_simulation['downsampling_step_min'] = 123
+    LJ_simulation['downsampling_rate'] = 0.01
+    LJ_simulation['downsampling_cic'] = True
 
 
     # derived parameters
     LJ_simulation['nplanes'] =  len(LJ_simulation['step_list_max'])
-
-
 
     
     LJ_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(LJ_simulation['cosmo_ccl'],a=1./(LJ_simulation['z_cmb']+1))*LJ_simulation['h']
@@ -133,7 +133,8 @@ matter_power_spectrum='halofit')
     FrontierE_simulation['nplanes'] =len(FrontierE_simulation['step_list_max'])
     #FrontierE_simulation['n_steps_cmb'] = 0 
 
-
+    FrontierE_simulation['downsampling_step_min'] = None
+    FrontierE_simulation['downsampling_rate'] = 1.0
     
     FrontierE_simulation['chi_cmb'] = ccl.background.comoving_radial_distance(FrontierE_simulation['cosmo_ccl'],a=1./(FrontierE_simulation['z_cmb']+1))*FrontierE_simulation['h']
     FrontierE_simulation['sim_z_max'] = step2z(FrontierE_simulation['step_list_max'][-1]-1, FrontierE_simulation['zfin'], FrontierE_simulation['zinit'], FrontierE_simulation['nsteps'])

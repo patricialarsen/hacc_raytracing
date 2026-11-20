@@ -22,13 +22,11 @@ def smooth_cl_log_ell(cl, lmin=2, ngrid=4096, sigma_grid=25, floor=1e-300):
     return out
 
 
-def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True, ell_cut=None, datapath=None):
+def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True, apply_extra_pix_window=False, ell_cut=None, datapath=None):
     """ Wiener filter to filter out shot noise """
     cl_lens = hp.alm2cl(alms_lens, lmax=lmax)
     shot_noise = 1.0/n_per_steradian
 
-    cl_signal_obs = np.maximum(cl_lens - shot_noise, 0.0)
-    cl_sig_smooth = smooth_cl_log_ell(cl_signal_obs)
 
     filt = np.zeros_like(cl_lens)
     
@@ -36,9 +34,21 @@ def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True
         window = hp.pixwin(nside, lmax=lmax, datapath=datapath)
     else:
         window = np.ones_like(filt)
-    
+
+    if apply_extra_pix_window:    
+        cl_signal_obs = np.maximum(cl_lens - shot_noise*window**4, 0.0)
+    else:
+        cl_signal_obs = np.maximum(cl_lens - shot_noise, 0.0)
+
+    cl_sig_smooth = smooth_cl_log_ell(cl_signal_obs)
+
+    filt = np.zeros_like(cl_lens)
     good = window > 1e-8
-    filt[good] = (cl_sig_smooth[good] / window[good]) / np.maximum(cl_sig_smooth[good] + shot_noise, 1.e-30) 
+
+    if apply_extra_pix_window:
+        filt[good] = (cl_sig_smooth[good] / window[good]**3) / np.maximum(cl_sig_smooth[good] + shot_noise*window[good]**4, 1.e-30) 
+    else:
+        filt[good] = (cl_sig_smooth[good] / window[good]) / np.maximum(cl_sig_smooth[good] + shot_noise, 1.e-30) 
     
     if ell_cut is not None:
         ell = np.arange(filt.size)

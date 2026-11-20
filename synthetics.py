@@ -9,7 +9,6 @@ from astropy.cosmology import FlatLambdaCDM, z_at_value
 from astropy import units as u
 import pyccl as ccl
 from filtering import wiener_filter, window_filter, wiener_filter_withtaper
-import lenspyx
 import math 
 from scipy.special import sph_harm_y
 from seam_correction import correct_density_sheet_y0

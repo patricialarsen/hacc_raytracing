@@ -20,9 +20,12 @@ from contextlib import contextmanager
 import time
 
 @contextmanager
-def timed_rank(label, comm):
+def timed_rank(label, comm=None):
     t0 = time.perf_counter()
-    rank = comm.Get_rank()
+    if comm is not None:
+        rank = comm.Get_rank()
+    else:
+        rank = 0
     try:
         yield
     finally:
@@ -183,6 +186,10 @@ def precompute_n_perst(step_idx,  sim, comm=None):
     else:
         n_per_steradian = np.mean(map_read)/sim['mpp']
 
+    if sim['downsampling_step_min'] is not None:
+        if sim['step_list_min']<=sim['downsampling_step_min']:
+            n_per_steradian = n_per_steradian * sim['downsampling_rate']
+
     np.savetxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt', np.array([n_per_steradian]))
 
     return 
@@ -228,6 +235,11 @@ def get_input_map_chi_z(step_idx,  sim, comm=None):
             n_per_steradian = np.mean(map_read)/sim['mpp'] 
         kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av * np.mean(map_read)
         
+    if sim['downsampling_step_min'] is not None:
+        if sim['step_list_min']<=sim['downsampling_step_min']:
+            n_per_steradian = n_per_steradian * sim['downsampling_rate']
+
+
     return map_read, chi_av, kappa_fac, n_per_steradian
 
 
@@ -254,7 +266,8 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
     else:
         map_read,  chi_av, kappa_fac, n_per_steradian = get_input_map_chi_z(step_idx, sim, comm=comm)
         if sim['nside']<=8192:
-            alms_lens = hp.map2alm((map_read/n_per_steradian - 1),lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights, ) 
+            map_mean = np.mean(map_read)
+            alms_lens = hp.map2alm((map_read/map_mean - 1),lmax=lmax, mmax=lmax, iter=3, use_pixel_weights=use_pixel_weights, ) 
         else:
             with timed_rank("Computing alms", comm):
                 map_read = map_read/np.mean(map_read)
@@ -273,9 +286,20 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
         alms_lens = hp.synalm(cl_lens, lmax=lmax, mmax=lmax, new=True,)
         filter=None
 
+    LJ_simulation['downsampling_step_min'] = 123
+    LJ_simulation['downsampling_rate'] = 0.01
+    LJ_simulation['downsampling_cic'] = True
+
+    
     
     if filter=='wiener':
-        alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
+        if sim['downsampling_step_min'] is not None:
+            if sim['step_list_min']<=sim['downsampling_step_min']:
+                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
+            else:
+                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=True, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
+        else:
+            alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
     elif filter=='wiener_tapered':
         alms_filtered = wiener_filter_withtaper(alms_lens, n_per_steradian, lmax, sim['nside'], sn_taper=sn_taper, sn_end=sn_end, min_taper_width=min_taper_width, ell_cut=ell_cut, apply_pix_window=apply_pix_window, datapath=sim['pixwin_datapath'])
     elif filter=='window':
@@ -309,6 +333,7 @@ def create_gauss_map_chi_z(read_path, run_fresh=False, nside_out = 8192):
 
         #Last Journey/ Frontier-E cosmology
         chi_cmb = ccl.background.comoving_radial_distance(sim['cosmo_ccl'],a=1./(z_cmb+1))
+
         chi_max = ccl.background.comoving_radial_distance(sim['cosmo_ccl'],a=1./(z_min+1))
         cmbk = ccl.CMBLensingTracer(sim['cosmo_ccl'], z_source=z_cmb)
 

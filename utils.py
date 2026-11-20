@@ -9,6 +9,8 @@ from write_funcs import restart_from_checkpoint, get_state_from_outputs
 import time
 
 
+
+
 @contextmanager
 def timed(label):
     t0 = time.perf_counter()
@@ -20,14 +22,18 @@ def timed(label):
 
 
 @contextmanager
-def timed_rank(label, comm):
+def timed_rank(label, comm=None):
     t0 = time.perf_counter()
-    rank = comm.Get_rank()
+    if comm is not None:
+        rank = comm.Get_rank()
+    else:
+        rank = 0
     try:
         yield
     finally:
         dt = time.perf_counter() - t0
         print(f"[timer] {label}: {dt:.2f} s, on rank {rank:d}", flush=True)
+
 
 
 @dataclass
