@@ -45,7 +45,7 @@ chi_cmb = sim['chi_cmb']
 nside = sim['nside']
 
 # geometry definitions 
-lmax = 3*nside-1
+lmax = 2.5*nside
 
 
 print('Setting up')

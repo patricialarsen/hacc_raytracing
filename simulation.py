@@ -237,11 +237,6 @@ def get_input_map_chi_z(step_idx,  sim, comm=None):
         else:
             n_per_steradian = np.mean(map_read)/sim['mpp'] 
         kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av * np.mean(map_read)
-        
-    if sim['downsampling_step_min'] is not None:
-        if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
-            n_per_steradian = n_per_steradian * sim['downsampling_rate']
-
 
     return map_read, chi_av, kappa_fac, n_per_steradian
 
@@ -292,7 +287,7 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
     if filter=='wiener':
         if sim['downsampling_step_min'] is not None:
             if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
-                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=sim["downsampling_cic"], ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
+                alms_filtered = wiener_filter(alms_lens, n_per_steradian* sim['downsampling_rate'], lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=sim["downsampling_cic"], ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
             else:
                 alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=False, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
         else:
