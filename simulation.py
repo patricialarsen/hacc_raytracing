@@ -134,8 +134,11 @@ def get_input_alm_chi_z(step_idx, sim, comm=None):
 
     with timed_rank("Reading alm data", comm):
         alm_read = hp.read_alm(sim['path_alms'] + '/alm_map_'+str(step_idx)+'.fits')
-        alm_read = truncate_alm_lmax(alm_read, lmax_out=int(2.0*sim['nside']))
-        
+        if sim['nside']>10000:
+            alm_read = truncate_alm_lmax(alm_read, lmax_out=int(2.0*sim['nside']))
+        else: 
+            alm_read = truncate_alm_lmax(alm_read, lmax_out=int(2.5*sim['nside']))
+            
     if sim['name']=="Frontier-E":
         alm_read  /= sim["mpp"] 
         alm_read[0] = 0.0
@@ -186,9 +189,9 @@ def precompute_n_perst(step_idx,  sim, comm=None):
     else:
         n_per_steradian = np.mean(map_read)/sim['mpp']
 
-    if sim['downsampling_step_min'] is not None:
-        if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
-            n_per_steradian = n_per_steradian * sim['downsampling_rate']
+    #if sim['downsampling_step_min'] is not None:
+    #    if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
+    #        n_per_steradian = n_per_steradian * sim['downsampling_rate']
 
     np.savetxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt', np.array([n_per_steradian]))
 

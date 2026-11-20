@@ -21,8 +21,8 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 size = comm.Get_size()
 
-sim = FrontierE_simulation_hydro()
-
+#sim = FrontierE_simulation_hydro()
+sim = LJ_simulation()
 
 nthreads = 128
 
@@ -35,9 +35,9 @@ nside = sim['nside']
 
 lmax = int(2.5*nside)
 
-step_idx = 2
+step_idx = 0
 print("Precomputing alms for  ", sim['nplanes'], " planes, starting with step ", step_idx, flush=True)    
-while step_idx<3:#sim['nplanes']:
+while step_idx<sim['nplanes']:
     print('step_idx',step_idx, flush=True)   
     with timed_rank(f"step {step_idx} read/input map",comm):
         alms_filtered = precompute_input_map_alms(step_idx, sim, lmax, nthreads, comm=comm)
