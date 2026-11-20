@@ -286,11 +286,10 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
         alms_lens = hp.synalm(cl_lens, lmax=lmax, mmax=lmax, new=True,)
         filter=None
     
-    
     if filter=='wiener':
         if sim['downsampling_step_min'] is not None:
             if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
-                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=True, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
+                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=sim["downsampling_cic"], ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
             else:
                 alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=False, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
         else:
