@@ -187,7 +187,7 @@ def precompute_n_perst(step_idx,  sim, comm=None):
         n_per_steradian = np.mean(map_read)/sim['mpp']
 
     if sim['downsampling_step_min'] is not None:
-        if sim['step_list_min']<=sim['downsampling_step_min']:
+        if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
             n_per_steradian = n_per_steradian * sim['downsampling_rate']
 
     np.savetxt(sim['output_path_alms'] +'n_perst_'+str(step_idx)+'.txt', np.array([n_per_steradian]))
@@ -236,7 +236,7 @@ def get_input_map_chi_z(step_idx,  sim, comm=None):
         kappa_fac = 4.0*np.pi*G/vc**2*(1.+z_av)/chi_av * np.mean(map_read)
         
     if sim['downsampling_step_min'] is not None:
-        if sim['step_list_min']<=sim['downsampling_step_min']:
+        if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
             n_per_steradian = n_per_steradian * sim['downsampling_rate']
 
 
@@ -285,19 +285,14 @@ def get_input_map_alms(step_idx, sim, lmax, nthreads, filter='wiener', save_cls=
     if test_synthetic_alms:
         alms_lens = hp.synalm(cl_lens, lmax=lmax, mmax=lmax, new=True,)
         filter=None
-
-    LJ_simulation['downsampling_step_min'] = 123
-    LJ_simulation['downsampling_rate'] = 0.01
-    LJ_simulation['downsampling_cic'] = True
-
     
     
     if filter=='wiener':
         if sim['downsampling_step_min'] is not None:
-            if sim['step_list_min']<=sim['downsampling_step_min']:
-                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
-            else:
+            if sim['step_list_min'][step_idx]<=sim['downsampling_step_min']:
                 alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=True, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
+            else:
+                alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, apply_extra_pix_window=False, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
         else:
             alms_filtered = wiener_filter(alms_lens, n_per_steradian, lmax, sim['nside'], apply_pix_window=apply_pix_window, ell_cut=ell_cut, datapath=sim['pixwin_datapath'])
     elif filter=='wiener_tapered':

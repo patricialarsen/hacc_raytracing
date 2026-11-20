@@ -50,7 +50,12 @@ def LJ_simulation():
     LJ_simulation['output_path_cls'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/'
     LJ_simulation['output_path_rt'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/map_8192_2p5_wiener_seamfix_alloutputs/'
     LJ_simulation['output_path_alms'] = '/pscratch/sd/p/plarsen/ray_tracing_tests/alms/'
-
+    
+    Omega_m = LJ_simulation["Omega_m"]
+    h = LJ_simulation["h"]
+    Omega_b = 0.02242 / h**2
+    Omega_c = Omega_m - Omega_b
+    
     LJ_simulation["cosmo_ccl"] = ccl.Cosmology(Omega_c=Omega_c, Omega_b=Omega_b, h=h, n_s=0.9665, sigma8=0.8102, m_nu=0.0, transfer_function="boltzmann_camb", matter_power_spectrum="halofit",)
     LJ_simulation["cosmo"] = FlatLambdaCDM(H0=100 * h, Om0=Omega_m, Ob0=Omega_b, Tcmb0=2.7255 * u.K, Neff=3.046, m_nu=0.0 * u.eV,)
 

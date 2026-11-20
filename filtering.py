@@ -40,6 +40,9 @@ def wiener_filter(alms_lens, n_per_steradian, lmax, nside, apply_pix_window=True
     else:
         cl_signal_obs = np.maximum(cl_lens - shot_noise, 0.0)
 
+    if not np.any(cl_signal_obs[2:] > 0):
+       return np.zeros_like(alms_lens)
+        
     cl_sig_smooth = smooth_cl_log_ell(cl_signal_obs)
 
     filt = np.zeros_like(cl_lens)
